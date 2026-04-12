@@ -65,8 +65,8 @@ type RepTarget =
 
 function cleanRepText(value?: string): string {
   return normalizeText(value)
-    .replace("/leg", "")
-    .replace("per leg", "")
+    .replace(/per leg/g, "")
+    .replace(/\/leg/g, "")
     .replace(/\s+/g, "");
 }
 
@@ -75,9 +75,11 @@ function parseRepTarget(value?: string): RepTarget | null {
   if (!text) return null;
 
   if (text.includes("-")) {
-    const [minStr, maxStr] = text.split("-");
-    const min = parseFloat(minStr);
-    const max = parseFloat(maxStr);
+    const parts = text.split("-");
+    if (parts.length !== 2) return null;
+
+    const min = parseFloat(parts[0]);
+    const max = parseFloat(parts[1]);
 
     if (Number.isNaN(min) || Number.isNaN(max)) return null;
 
@@ -90,18 +92,41 @@ function parseRepTarget(value?: string): RepTarget | null {
   return { kind: "exact", value: exact };
 }
 
-function getActualRepNumber(value?: string): number | null {
+function parseSetBySetReps(value?: string): number[] {
   const text = cleanRepText(value);
-  if (!text) return null;
+  if (!text) return [];
 
-  if (text.includes("-")) {
-    const [, maxStr] = text.split("-");
-    const max = parseFloat(maxStr);
-    return Number.isNaN(max) ? null : max;
+  // If it's a simple target like "8" return [8]
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const n = parseFloat(text);
+    return Number.isNaN(n) ? [] : [n];
   }
 
-  const n = parseFloat(text);
-  return Number.isNaN(n) ? null : n;
+  // If it's clearly a range target like "6-8", not actual logged sets
+  if (/^\d+(\.\d+)?-\d+(\.\d+)?$/.test(text)) {
+    return [];
+  }
+
+  // Treat separators like comma, pipe, slash, semicolon as set separators
+  const normalized = text.replace(/[|;/]/g, ",");
+  const pieces = normalized.split(",").map((p) => p.trim()).filter(Boolean);
+
+  const nums = pieces
+    .map((piece) => parseFloat(piece))
+    .filter((n) => !Number.isNaN(n));
+
+  if (nums.length > 0) return nums;
+
+  // Fallback: handle things like "8-8-7" as set-by-set data
+  const dashPieces = text.split("-").map((p) => p.trim()).filter(Boolean);
+  const dashNums = dashPieces
+    .map((piece) => parseFloat(piece))
+    .filter((n) => !Number.isNaN(n));
+
+  // Only treat dashed values as set-by-set if there are 3+ numbers
+  if (dashNums.length >= 3) return dashNums;
+
+  return [];
 }
 
 type RepPerformance =
@@ -115,18 +140,35 @@ function evaluateRepPerformance(
   actualReps?: string
 ): RepPerformance {
   const planned = parseRepTarget(plannedReps);
-  const actual = getActualRepNumber(actualReps);
+  if (!planned) return "unknown";
 
-  if (!planned || actual === null) return "unknown";
+  const actualSetValues = parseSetBySetReps(actualReps);
 
-  if (planned.kind === "exact") {
-    if (actual >= planned.value) return "top";
+  // If set-by-set logging exists, judge by the lowest completed set
+  if (actualSetValues.length > 0) {
+    const lowestSet = Math.min(...actualSetValues);
+
+    if (planned.kind === "exact") {
+      if (lowestSet >= planned.value) return "top";
+      return "below";
+    }
+
+    if (lowestSet >= planned.max) return "top";
+    if (lowestSet >= planned.min) return "within";
     return "below";
   }
 
-  if (actual > planned.max) return "top";
-  if (actual === planned.max) return "top";
-  if (actual >= planned.min) return "within";
+  // Fallback to single-number parsing
+  const singleActual = parseNumber(cleanRepText(actualReps));
+  if (singleActual === null) return "unknown";
+
+  if (planned.kind === "exact") {
+    if (singleActual >= planned.value) return "top";
+    return "below";
+  }
+
+  if (singleActual >= planned.max) return "top";
+  if (singleActual >= planned.min) return "within";
   return "below";
 }
 
@@ -189,7 +231,7 @@ export function getProgressionDecision(
     return {
       suggestedWeight: String(nextWeight),
       outcome: "increase",
-      reason: "You hit the top of the rep target cleanly, so increase weight.",
+      reason: "You hit the target across all logged sets, so increase weight.",
     };
   }
 
@@ -197,7 +239,7 @@ export function getProgressionDecision(
     return {
       suggestedWeight: String(currentWeight),
       outcome: "hold",
-      reason: "You hit the top of the rep target, but it sounded hard, so hold weight.",
+      reason: "You hit the target, but notes suggest it was hard, so hold weight.",
     };
   }
 
@@ -205,7 +247,7 @@ export function getProgressionDecision(
     return {
       suggestedWeight: String(currentWeight),
       outcome: "hold",
-      reason: "You were within the rep range, but not at the top yet, so hold weight.",
+      reason: "You stayed within the rep range, but not at the top across all sets, so hold weight.",
     };
   }
 
@@ -219,7 +261,7 @@ export function getProgressionDecision(
       outcome: hard ? "decrease" : "hold",
       reason: hard
         ? "You missed the rep target and notes suggest it was hard, so reduce weight."
-        : "You were below the rep target, so hold weight.",
+        : "You were below the rep target on at least one set, so hold weight.",
     };
   }
 
