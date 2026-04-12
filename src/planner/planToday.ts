@@ -1,3 +1,5 @@
+import { getWorkoutTemplate, type WorkoutTemplate } from "./workoutTemplates";
+
 export type ModePreference = "auto" | "chaos" | "steady";
 export type EnergyLevel = "low" | "medium" | "high";
 export type WorkoutDuration = "MED" | "30" | "60" | "75";
@@ -12,9 +14,10 @@ export type PlanInput = {
 
 export type PlanResult = {
   mode: "CHAOS" | "STEADY";
-  workout: string;
+  workoutCode: string;
   duration: WorkoutDuration;
   reason: string;
+  template?: WorkoutTemplate;
 };
 
 function getDuration(minutes: number, energy: EnergyLevel): WorkoutDuration {
@@ -31,13 +34,13 @@ function getMode(
 ): "CHAOS" | "STEADY" {
   if (modePreference === "chaos") return "CHAOS";
   if (modePreference === "steady") return "STEADY";
-
   return sessionsLast7Days >= 4 ? "STEADY" : "CHAOS";
 }
 
 function getNextChaosWorkout(lastWorkout?: string): string {
   if (lastWorkout === "A") return "B";
   if (lastWorkout === "B") return "C";
+  if (lastWorkout === "C") return "A";
   return "A";
 }
 
@@ -45,6 +48,7 @@ function getNextSteadyWorkout(lastWorkout?: string): string {
   if (lastWorkout === "LOWER1") return "PUSH";
   if (lastWorkout === "PUSH") return "LOWER2";
   if (lastWorkout === "LOWER2") return "PULL";
+  if (lastWorkout === "PULL") return "LOWER1";
   return "LOWER1";
 }
 
@@ -82,7 +86,7 @@ export function planToday(input: PlanInput): PlanResult {
   const duration = getDuration(input.minutes, input.energy);
   const mode = getMode(input.modePreference, input.sessionsLast7Days);
 
-  const workout =
+  const workoutCode =
     mode === "CHAOS"
       ? getNextChaosWorkout(input.lastWorkout)
       : getNextSteadyWorkout(input.lastWorkout);
@@ -94,10 +98,13 @@ export function planToday(input: PlanInput): PlanResult {
     input.energy
   );
 
+  const template = getWorkoutTemplate(workoutCode, duration);
+
   return {
     mode,
-    workout,
+    workoutCode,
     duration,
     reason,
+    template,
   };
 }

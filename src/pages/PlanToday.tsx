@@ -5,6 +5,7 @@ import {
   type ModePreference,
   type PlanResult,
 } from "../planner/planToday";
+import SessionLogger from "./SessionLogger";
 
 export default function PlanToday() {
   const [minutes, setMinutes] = useState(30);
@@ -14,6 +15,7 @@ export default function PlanToday() {
   const [sessionsLast7Days, setSessionsLast7Days] = useState(2);
   const [lastWorkout, setLastWorkout] = useState("");
   const [result, setResult] = useState<PlanResult | null>(null);
+  const [started, setStarted] = useState(false);
 
   function handlePlan() {
     const plan = planToday({
@@ -25,10 +27,15 @@ export default function PlanToday() {
     });
 
     setResult(plan);
+    setStarted(false);
+  }
+
+  if (started && result) {
+    return <SessionLogger plan={result} onDone={() => setStarted(false)} />;
   }
 
   return (
-    <div style={{ padding: 20, fontFamily: "sans-serif", maxWidth: 800 }}>
+    <div style={{ padding: 20, fontFamily: "sans-serif", maxWidth: 900 }}>
       <h1>Plan Today</h1>
       <p>Choose your available time and current situation, then get a recommended workout.</p>
 
@@ -113,18 +120,51 @@ export default function PlanToday() {
           }}
         >
           <h2>Recommendation</h2>
-          <p>
-            <strong>Mode:</strong> {result.mode}
-          </p>
-          <p>
-            <strong>Workout:</strong> {result.workout}
-          </p>
-          <p>
-            <strong>Duration:</strong> {result.duration}
-          </p>
-          <p>
-            <strong>Why:</strong> {result.reason}
-          </p>
+          <p><strong>Mode:</strong> {result.mode}</p>
+          <p><strong>Workout Code:</strong> {result.workoutCode}</p>
+          <p><strong>Duration:</strong> {result.duration}</p>
+          <p><strong>Why:</strong> {result.reason}</p>
+
+          {result.template ? (
+            <div style={{ marginTop: 20 }}>
+              <h3>{result.template.title}</h3>
+              <p><strong>Focus:</strong> {result.template.focus}</p>
+
+              <table
+                border={1}
+                cellPadding={8}
+                style={{ borderCollapse: "collapse", minWidth: 700, marginTop: 12 }}
+              >
+                <thead>
+                  <tr>
+                    <th>Exercise</th>
+                    <th>Sets</th>
+                    <th>Reps</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.template.exercises.map((exercise, index) => (
+                    <tr key={`${exercise.name}-${index}`}>
+                      <td>{exercise.name}</td>
+                      <td>{exercise.sets}</td>
+                      <td>{exercise.reps}</td>
+                      <td>{exercise.notes ?? ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <button
+                onClick={() => setStarted(true)}
+                style={{ marginTop: 16 }}
+              >
+                Start Session
+              </button>
+            </div>
+          ) : (
+            <p style={{ marginTop: 16 }}>No template found for this workout yet.</p>
+          )}
         </div>
       )}
     </div>
