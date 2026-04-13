@@ -5,6 +5,7 @@ import {
   type ModePreference,
   type PlanResult,
 } from "../planner/planToday";
+import { getWorkoutTemplateByCodeAndDuration, initDb } from "../lib/db";
 import SessionLogger from "./SessionLogger";
 
 export default function PlanToday() {
@@ -16,18 +17,38 @@ export default function PlanToday() {
   const [lastWorkout, setLastWorkout] = useState("");
   const [result, setResult] = useState<PlanResult | null>(null);
   const [started, setStarted] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  function handlePlan() {
-    const plan = planToday({
-      minutes,
-      energy,
-      modePreference,
-      sessionsLast7Days,
-      lastWorkout: lastWorkout || undefined,
-    });
+  async function handlePlan() {
+    setLoading(true);
 
-    setResult(plan);
-    setStarted(false);
+    try {
+      await initDb();
+
+      const basePlan = planToday({
+        minutes,
+        energy,
+        modePreference,
+        sessionsLast7Days,
+        lastWorkout: lastWorkout || undefined,
+      });
+
+      const template = await getWorkoutTemplateByCodeAndDuration(
+        basePlan.workoutCode,
+        basePlan.duration
+      );
+
+      setResult({
+        ...basePlan,
+        template: template ?? undefined,
+      });
+
+      setStarted(false);
+    } catch (err) {
+      console.error("PLAN LOAD ERROR:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (started && result) {
@@ -100,13 +121,14 @@ export default function PlanToday() {
 
         <button
           onClick={handlePlan}
+          disabled={loading}
           style={{
             width: 160,
             padding: "10px 14px",
             cursor: "pointer",
           }}
         >
-          Plan Today
+          {loading ? "Loading..." : "Plan Today"}
         </button>
       </div>
 
@@ -145,8 +167,8 @@ export default function PlanToday() {
                 </thead>
                 <tbody>
                   {result.template.exercises.map((exercise, index) => (
-                    <tr key={`${exercise.name}-${index}`}>
-                      <td>{exercise.name}</td>
+                    <tr key={`${exercise.exercise_name}-${index}`}>
+                      <td>{exercise.exercise_name}</td>
                       <td>{exercise.sets}</td>
                       <td>{exercise.reps}</td>
                       <td>{exercise.notes ?? ""}</td>
@@ -163,7 +185,9 @@ export default function PlanToday() {
               </button>
             </div>
           ) : (
-            <p style={{ marginTop: 16 }}>No template found for this workout yet.</p>
+            <p style={{ marginTop: 16 }}>
+              No template found in the database for this workout. Check Template Manager.
+            </p>
           )}
         </div>
       )}

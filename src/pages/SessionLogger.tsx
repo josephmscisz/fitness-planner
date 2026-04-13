@@ -4,6 +4,10 @@ import {
   createWorkoutSession,
   insertExerciseLog,
   getLastExerciseLog,
+  getDistinctExerciseCategories,
+  getDistinctExerciseEquipment,
+  getExercisesFiltered,
+type ExerciseRecord,
 } from "../lib/db";
 import { getProgressionDecision } from "../planner/progression";
 import type { PlanResult } from "../planner/planToday";
@@ -188,6 +192,13 @@ export default function SessionLogger({ plan, onDone }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<ExerciseForm[]>([]);
   const [isCompact, setIsCompact] = useState(window.innerWidth < 1100);
+  const [showAddExercise, setShowAddExercise] = useState(false);
+  const [exerciseSearch, setExerciseSearch] = useState("");
+  const [exerciseCategory, setExerciseCategory] = useState("");
+  const [exerciseEquipment, setExerciseEquipment] = useState("");
+  const [availableExercises, setAvailableExercises] = useState<ExerciseRecord[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  const [availableEquipment, setAvailableEquipment] = useState<string[]>([]);    
 
   useEffect(() => {
     function handleResize() {
@@ -204,12 +215,12 @@ export default function SessionLogger({ plan, onDone }: Props) {
 
       const newEntries: ExerciseForm[] = [];
 
-      for (const exercise of plan.template.exercises) {
-        const lastLog = await getLastExerciseLog(exercise.name);
-        const decision = getProgressionDecision(exercise.name, lastLog);
+  for (const exercise of plan.template.exercises) {
+    const lastLog = await getLastExerciseLog(exercise.exercise_name);
+    const decision = getProgressionDecision(exercise.exercise_name, lastLog);
 
         newEntries.push({
-          exerciseName: exercise.name,
+          exerciseName: exercise.exercise_name,
           plannedSets: exercise.sets,
           plannedReps: exercise.reps,
           weight: decision.suggestedWeight,
@@ -232,6 +243,54 @@ export default function SessionLogger({ plan, onDone }: Props) {
     loadWithSuggestions();
   }, [plan]);
 
+  useEffect(() => {
+    async function loadFilterOptions() {
+      const categories = await getDistinctExerciseCategories();
+      const equipment = await getDistinctExerciseEquipment();
+      setAvailableCategories(categories);
+      setAvailableEquipment(equipment);
+    }
+
+    loadFilterOptions();
+  }, []);
+
+  async function searchExercisesForAdd() {
+    const rows = await getExercisesFiltered({
+      category: exerciseCategory || undefined,
+      equipment: exerciseEquipment || undefined,
+      search: exerciseSearch || undefined,
+    });
+
+    setAvailableExercises(rows);
+  }
+  async function addExerciseToSession(exercise: ExerciseRecord) {
+    const lastLog = await getLastExerciseLog(exercise.name);
+    const decision = getProgressionDecision(exercise.name, lastLog);
+
+    const newEntry: ExerciseForm = {
+      exerciseName: exercise.name,
+      plannedSets: "",
+      plannedReps: "",
+      weight: decision.suggestedWeight,
+      actualSets: "",
+      actualReps: "",
+      notes: "",
+      progressionReason: decision.reason,
+      progressionOutcome: decision.outcome,
+      lastWeight: lastLog?.weight ?? "",
+      lastActualSets: lastLog?.actual_sets ?? "",
+      lastActualReps: lastLog?.actual_reps ?? "",
+      lastNotes: lastLog?.notes ?? "",
+      status: "completed",
+    };
+
+    setEntries((current) => [...current, newEntry]);
+    setShowAddExercise(false);
+    setAvailableExercises([]);
+    setExerciseSearch("");
+    setExerciseCategory("");
+    setExerciseEquipment("");
+}
   function updateEntry(index: number, field: keyof ExerciseForm, value: string) {
     setEntries((current) =>
       current.map((entry, i) =>
@@ -576,6 +635,144 @@ export default function SessionLogger({ plan, onDone }: Props) {
           backgroundColor: "#f8fafc",
         }}
       >
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowAddExercise((v) => !v)}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 8,
+              border: "1px solid #cbd5e1",
+              backgroundColor: "white",
+              cursor: "pointer",
+            }}
+          >
+            {showAddExercise ? "Close Add Exercise" : "Add Exercise"}
+          </button>
+        </div>
+
+        {showAddExercise && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: 16,
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              backgroundColor: "#fafafa",
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>Add Exercise</h3>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isCompact ? "1fr" : "1fr 1fr 1fr auto",
+                gap: 12,
+                alignItems: "end",
+                marginBottom: 16,
+              }}
+            >
+              <div>
+                <div style={labelStyle}>Search</div>
+                <input
+                  style={inputStyle}
+                  value={exerciseSearch}
+                  onChange={(e) => setExerciseSearch(e.target.value)}
+                  placeholder="Exercise name"
+                />
+              </div>
+
+              <div>
+                <div style={labelStyle}>Category</div>
+                <select
+                  style={inputStyle}
+                  value={exerciseCategory}
+                  onChange={(e) => setExerciseCategory(e.target.value)}
+                >
+                  <option value="">All</option>
+                  {availableCategories.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div style={labelStyle}>Equipment</div>
+                <select
+                  style={inputStyle}
+                  value={exerciseEquipment}
+                  onChange={(e) => setExerciseEquipment(e.target.value)}
+                >
+                  <option value="">All</option>
+                  {availableEquipment.map((e) => (
+                    <option key={e} value={e}>{e}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={searchExercisesForAdd}
+                style={{
+                  height: 38,
+                  padding: "0 14px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  backgroundColor: "white",
+                  cursor: "pointer",
+                }}
+              >
+                Search
+              </button>
+            </div>
+
+            {availableExercises.length > 0 && (
+              <div style={{ display: "grid", gap: 10 }}>
+                {availableExercises.map((exercise) => (
+                  <div
+                    key={exercise.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: 12,
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 10,
+                      backgroundColor: "white",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600 }}>{exercise.name}</div>
+                      <div style={smallMutedText}>
+                        {exercise.category} {exercise.equipment ? `· ${exercise.equipment}` : ""}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => addExerciseToSession(exercise)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: "1px solid #cbd5e1",
+                        backgroundColor: "white",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {availableExercises.length === 0 && (
+              <div style={smallMutedText}>Run a search to choose an exercise.</div>
+            )}
+          </div>
+        )}
         <div style={{ fontWeight: 700, marginBottom: 10 }}>Session Summary</div>
 
         <div

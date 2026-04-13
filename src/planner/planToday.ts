@@ -1,5 +1,3 @@
-import { getWorkoutTemplate, type WorkoutTemplate } from "./workoutTemplates";
-
 export type ModePreference = "auto" | "chaos" | "steady";
 export type EnergyLevel = "low" | "medium" | "high";
 export type WorkoutDuration = "MED" | "30" | "60" | "75";
@@ -17,7 +15,22 @@ export type PlanResult = {
   workoutCode: string;
   duration: WorkoutDuration;
   reason: string;
-  template?: WorkoutTemplate;
+  template?: {
+    id: number;
+    code: string;
+    title: string;
+    mode: "CHAOS" | "STEADY";
+    duration: WorkoutDuration;
+    focus: string;
+    exercises: Array<{
+      id: number;
+      exercise_name: string;
+      sort_order: number;
+      sets: string;
+      reps: string;
+      notes: string;
+    }>;
+  };
 };
 
 function getDuration(minutes: number, energy: EnergyLevel): WorkoutDuration {
@@ -98,13 +111,10 @@ export function planToday(input: PlanInput): PlanResult {
     input.energy
   );
 
-  const template = getWorkoutTemplate(workoutCode, duration);
-
   return {
     mode,
     workoutCode,
     duration,
     reason,
-    template,
   };
 }
