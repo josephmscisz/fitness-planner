@@ -74,6 +74,30 @@ export async function initDb() {
     )
   `);
 
+  try {
+    await db.execute(`ALTER TABLE exercises ADD COLUMN role_type TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE exercises ADD COLUMN accessory_priority INTEGER DEFAULT 5`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE exercises ADD COLUMN tutorial_url TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_template_exercises ADD COLUMN slot_type TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_template_exercises ADD COLUMN accessory_category TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_template_exercises ADD COLUMN accessory_equipment TEXT`);
+  } catch {}
+
   const templateCountRows = await db.select<{ count: number }[]>(
     "SELECT COUNT(*) as count FROM workout_templates"
   );
@@ -356,6 +380,9 @@ export type ExerciseRecord = {
   primary_muscles?: string | null;
   equipment?: string | null;
   notes?: string | null;
+  role_type?: string | null;
+  accessory_priority?: number | null;
+  tutorial_url?: string | null; 
 };
 
 export async function createExercise(input: {
@@ -649,4 +676,52 @@ export async function getWorkoutTemplateByCodeAndDuration(
       notes: row.notes ?? "",
     })),
   };
+}
+
+export async function getAccessoryCandidates(filters?: {
+  category?: string;
+  equipment?: string;
+}): Promise<
+  Array<{
+    id: number;
+    name: string;
+    category: string;
+    equipment?: string | null;
+    accessory_priority?: number | null;
+    last_used_at?: string | null;
+  }>
+> {
+  const db = await getDb();
+
+  let query = `
+    SELECT
+      e.id,
+      e.name,
+      e.category,
+      e.equipment,
+      e.accessory_priority,
+      MAX(ws.started_at) as last_used_at
+    FROM exercises e
+    LEFT JOIN exercise_logs el ON el.exercise_name = e.name
+    LEFT JOIN workout_sessions ws ON ws.id = el.session_id
+    WHERE e.role_type = 'accessory'
+  `;
+
+  const params: string[] = [];
+
+  if (filters?.category) {
+    query += ` AND e.category = ?`;
+    params.push(filters.category);
+  }
+
+  if (filters?.equipment) {
+    query += ` AND e.equipment = ?`;
+    params.push(filters.equipment);
+  }
+
+  query += `
+    GROUP BY e.id, e.name, e.category, e.equipment, e.accessory_priority
+  `;
+
+  return db.select(query, params);
 }
