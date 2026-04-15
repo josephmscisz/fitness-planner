@@ -29,6 +29,12 @@ export type PlanResult = {
       sets: string;
       reps: string;
       notes: string;
+      slot_type?: string;
+      accessory_slot?: string;
+      accessory_equipment?: string;
+      tutorial_url?: string;
+      was_rotated?: boolean;
+      rotation_reason?: string;
     }>;
   };
 };

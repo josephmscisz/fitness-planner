@@ -1,3 +1,4 @@
+import { chooseAccessoryCandidate } from "../planner/accessoryRotation";
 import Database from "@tauri-apps/plugin-sql";
 
 let dbPromise: Promise<Database> | null = null;
@@ -70,10 +71,14 @@ export async function initDb() {
       sort_order INTEGER NOT NULL,
       sets TEXT,
       reps TEXT,
-      notes TEXT
+      notes TEXT,
+      slot_type TEXT,
+      accessory_slot TEXT,
+      accessory_equipment TEXT
     )
   `);
 
+  // Exercise table migrations
   try {
     await db.execute(`ALTER TABLE exercises ADD COLUMN role_type TEXT`);
   } catch {}
@@ -87,11 +92,16 @@ export async function initDb() {
   } catch {}
 
   try {
+    await db.execute(`ALTER TABLE exercises ADD COLUMN accessory_slot TEXT`);
+  } catch {}
+
+  // Template exercise table migrations
+  try {
     await db.execute(`ALTER TABLE workout_template_exercises ADD COLUMN slot_type TEXT`);
   } catch {}
 
   try {
-    await db.execute(`ALTER TABLE workout_template_exercises ADD COLUMN accessory_category TEXT`);
+    await db.execute(`ALTER TABLE workout_template_exercises ADD COLUMN accessory_slot TEXT`);
   } catch {}
 
   try {
@@ -132,51 +142,74 @@ export async function initDb() {
       insertedTemplates.map((t) => [t.code, t.id])
     );
 
-    const templateExercises: Array<[string, string, number, string, string, string]> = [
-      ["A-30", "Back Squat", 1, "5", "3", ""],
-      ["A-30", "Bench Press", 2, "5", "3", ""],
+    const templateExercises: Array<
+      [string, string, number, string, string, string, string, string, string]
+    > = [
+      ["A-30", "Back Squat", 1, "5", "3", "", "fixed_foundation", "", ""],
+      ["A-30", "Bench Press", 2, "5", "3", "", "fixed_foundation", "", ""],
 
-      ["A-60", "Back Squat", 1, "4", "5", ""],
-      ["A-60", "Bench Press", 2, "4", "5", ""],
-      ["A-60", "Pull-Up", 3, "3", "8", ""],
-      ["A-60", "Triceps Pushdown", 4, "3", "12", ""],
+      ["A-60", "Back Squat", 1, "4", "5", "", "fixed_foundation", "", ""],
+      ["A-60", "Bench Press", 2, "4", "5", "", "fixed_foundation", "", ""],
+      ["A-60", "", 3, "3", "8", "", "rotating_accessory", "upper_back", ""],
+      ["A-60", "Triceps Pushdown", 4, "3", "12", "", "fixed_accessory", "triceps", "Cable"],
 
-      ["B-30", "Deadlift", 1, "5", "3", ""],
-      ["B-30", "Pull-Up", 2, "5", "5", ""],
+      ["B-30", "Deadlift", 1, "5", "3", "", "fixed_foundation", "", ""],
+      ["B-30", "", 2, "5", "5", "", "rotating_accessory", "lats", ""],
 
-      ["B-60", "Deadlift", 1, "4", "4", ""],
-      ["B-60", "Pull-Up", 2, "4", "6-8", ""],
-      ["B-60", "Overhead Press", 3, "3", "6", ""],
-      ["B-60", "Barbell Row", 4, "3", "8", ""],
+      ["B-60", "Deadlift", 1, "4", "4", "", "fixed_foundation", "", ""],
+      ["B-60", "", 2, "4", "6-8", "", "rotating_accessory", "lats", ""],
+      ["B-60", "Overhead Press", 3, "3", "6", "", "fixed_foundation", "", ""],
+      ["B-60", "", 4, "3", "8", "", "rotating_accessory", "upper_back", ""],
 
-      ["LOWER1-30", "Back Squat", 1, "5", "3", ""],
-      ["LOWER1-30", "Leg Extension", 2, "3", "10", ""],
+      ["LOWER1-30", "Back Squat", 1, "5", "3", "", "fixed_foundation", "", ""],
+      ["LOWER1-30", "", 2, "3", "10", "", "rotating_accessory", "quads_iso", ""],
 
-      ["LOWER1-60", "Back Squat", 1, "4", "5", ""],
-      ["LOWER1-60", "Romanian Deadlift", 2, "3", "8", ""],
-      ["LOWER1-60", "Leg Extension", 3, "3", "12", ""],
+      ["LOWER1-60", "Back Squat", 1, "4", "5", "", "fixed_foundation", "", ""],
+      ["LOWER1-60", "Romanian Deadlift", 2, "3", "8", "", "fixed_foundation", "", ""],
+      ["LOWER1-60", "", 3, "3", "12", "", "rotating_accessory", "quads_iso", ""],
 
-      ["PUSH-30", "Bench Press", 1, "5", "3", ""],
-      ["PUSH-30", "Overhead Press", 2, "3", "6", ""],
+      ["PUSH-30", "Bench Press", 1, "5", "3", "", "fixed_foundation", "", ""],
+      ["PUSH-30", "Overhead Press", 2, "3", "6", "", "fixed_foundation", "", ""],
 
-      ["PUSH-60", "Bench Press", 1, "4", "5", ""],
-      ["PUSH-60", "Overhead Press", 2, "3", "6-8", ""],
-      ["PUSH-60", "Incline Press", 3, "3", "8", ""],
-      ["PUSH-60", "Triceps Pushdown", 4, "3", "12", ""],
+      ["PUSH-60", "Bench Press", 1, "4", "5", "", "fixed_foundation", "", ""],
+      ["PUSH-60", "Overhead Press", 2, "3", "6-8", "", "fixed_foundation", "", ""],
+      ["PUSH-60", "", 3, "3", "8", "", "rotating_accessory", "chest_accessory", ""],
+      ["PUSH-60", "", 4, "3", "12", "", "rotating_accessory", "triceps", ""],
     ];
 
-    for (const [code, exerciseName, sortOrder, sets, reps, notes] of templateExercises) {
+    for (const [
+      code,
+      exerciseName,
+      sortOrder,
+      sets,
+      reps,
+      notes,
+      slotType,
+      accessorySlot,
+      accessoryEquipment,
+    ] of templateExercises) {
       const templateId = templateMap[code];
       if (!templateId) continue;
 
       await db.execute(
         `INSERT INTO workout_template_exercises
-          (template_id, exercise_name, sort_order, sets, reps, notes)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [templateId, exerciseName, sortOrder, sets, reps, notes]
+          (template_id, exercise_name, sort_order, sets, reps, notes, slot_type, accessory_slot, accessory_equipment)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          templateId,
+          exerciseName,
+          sortOrder,
+          sets,
+          reps,
+          notes,
+          slotType,
+          accessorySlot,
+          accessoryEquipment,
+        ]
       );
     }
   }
+
   const result = await db.select<{ count: number }[]>(
     "SELECT COUNT(*) as count FROM exercises"
   );
@@ -197,7 +230,7 @@ export async function initDb() {
       ["Leg Extension", "Lower", "Isolation", "Quads", "Machine", ""],
       ["Triceps Pushdown", "Upper", "Isolation", "Triceps", "Cable", ""],
       ["Incline Press", "Upper", "Push", "Chest/Shoulders", "Barbell/Dumbbell", ""],
-      ["Face Pull", "Upper", "Pull", "Rear Delts/Upper Back", "Cable", ""],
+      ["Face Pull", "Upper", "Isolation", "Rear Delts/Upper Back", "Cable", ""],
       ["Curl", "Upper", "Isolation", "Biceps", "Dumbbell/Cable", ""],
       ["Front Squat", "Lower", "Squat", "Quads/Core", "Barbell", ""],
       ["Hamstring Curl", "Lower", "Isolation", "Hamstrings", "Machine", ""],
@@ -205,6 +238,10 @@ export async function initDb() {
       ["Lateral Raise", "Upper", "Isolation", "Shoulders", "Dumbbell/Cable", ""],
       ["Calf Raise", "Lower", "Isolation", "Calves", "Machine/Bodyweight", ""],
       ["Rear Delt Raise", "Upper", "Isolation", "Rear Delts", "Dumbbell", ""],
+      ["Chest Supported Row", "Upper", "Horizontal Pull", "Upper Back", "Machine", ""],
+      ["Cable Row", "Upper", "Horizontal Pull", "Upper Back", "Cable", ""],
+      ["Overhead Cable Extension", "Upper", "Isolation", "Triceps", "Cable", ""],
+      ["Single Arm Pushdown", "Upper", "Isolation", "Triceps", "Cable", ""],
     ];
 
     for (const ex of starterExercises) {
@@ -226,13 +263,28 @@ export type Exercise = {
   primary_muscles?: string | null;
   equipment?: string | null;
   notes?: string | null;
+  role_type?: string | null;
+  accessory_priority?: number | null;
+  tutorial_url?: string | null;
+  accessory_slot?: string | null;
 };
 
 export async function getExercises(): Promise<Exercise[]> {
   const db = await getDb();
 
   return db.select<Exercise[]>(
-    `SELECT id, name, category, movement_pattern, primary_muscles, equipment, notes
+    `SELECT
+      id,
+      name,
+      category,
+      movement_pattern,
+      primary_muscles,
+      equipment,
+      notes,
+      role_type,
+      accessory_priority,
+      tutorial_url,
+      accessory_slot
      FROM exercises
      ORDER BY name ASC`
   );
@@ -382,7 +434,8 @@ export type ExerciseRecord = {
   notes?: string | null;
   role_type?: string | null;
   accessory_priority?: number | null;
-  tutorial_url?: string | null; 
+  tutorial_url?: string | null;
+  accessory_slot?: string | null;
 };
 
 export async function createExercise(input: {
@@ -392,13 +445,17 @@ export async function createExercise(input: {
   primaryMuscles?: string;
   equipment?: string;
   notes?: string;
+  roleType?: string;
+  accessoryPriority?: number;
+  tutorialUrl?: string;
+  accessorySlot?: string;
 }) {
   const db = await getDb();
 
   await db.execute(
     `INSERT INTO exercises
-      (name, category, movement_pattern, primary_muscles, equipment, notes)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+      (name, category, movement_pattern, primary_muscles, equipment, notes, role_type, accessory_priority, tutorial_url, accessory_slot)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.category,
@@ -406,6 +463,10 @@ export async function createExercise(input: {
       input.primaryMuscles ?? "",
       input.equipment ?? "",
       input.notes ?? "",
+      input.roleType ?? "",
+      input.accessoryPriority ?? 5,
+      input.tutorialUrl ?? "",
+      input.accessorySlot ?? "",
     ]
   );
 }
@@ -418,12 +479,16 @@ export async function updateExercise(input: {
   primaryMuscles?: string;
   equipment?: string;
   notes?: string;
+  roleType?: string;
+  accessoryPriority?: number;
+  tutorialUrl?: string;
+  accessorySlot?: string;
 }) {
   const db = await getDb();
 
   await db.execute(
     `UPDATE exercises
-     SET name = ?, category = ?, movement_pattern = ?, primary_muscles = ?, equipment = ?, notes = ?
+     SET name = ?, category = ?, movement_pattern = ?, primary_muscles = ?, equipment = ?, notes = ?, role_type = ?, accessory_priority = ?, tutorial_url = ?, accessory_slot = ?
      WHERE id = ?`,
     [
       input.name,
@@ -432,6 +497,10 @@ export async function updateExercise(input: {
       input.primaryMuscles ?? "",
       input.equipment ?? "",
       input.notes ?? "",
+      input.roleType ?? "",
+      input.accessoryPriority ?? 5,
+      input.tutorialUrl ?? "",
+      input.accessorySlot ?? "",
       input.id,
     ]
   );
@@ -451,7 +520,18 @@ export async function getExercisesFiltered(filters?: {
   const db = await getDb();
 
   let query = `
-    SELECT id, name, category, movement_pattern, primary_muscles, equipment, notes
+    SELECT
+      id,
+      name,
+      category,
+      movement_pattern,
+      primary_muscles,
+      equipment,
+      notes,
+      role_type,
+      accessory_priority,
+      tutorial_url,
+      accessory_slot
     FROM exercises
     WHERE 1=1
   `;
@@ -510,6 +590,9 @@ export type WorkoutTemplateExerciseRecord = {
   sets?: string | null;
   reps?: string | null;
   notes?: string | null;
+  slot_type?: string | null;
+  accessory_slot?: string | null;
+  accessory_equipment?: string | null;
 };
 
 export async function getWorkoutTemplates(): Promise<WorkoutTemplateRecord[]> {
@@ -528,7 +611,17 @@ export async function getWorkoutTemplateExercises(
   const db = await getDb();
 
   return db.select<WorkoutTemplateExerciseRecord[]>(
-    `SELECT *
+    `SELECT
+        id,
+        template_id,
+        exercise_name,
+        sort_order,
+        sets,
+        reps,
+        notes,
+        slot_type,
+        accessory_slot,
+        accessory_equipment
      FROM workout_template_exercises
      WHERE template_id = ?
      ORDER BY sort_order ASC, id ASC`,
@@ -558,12 +651,15 @@ export async function updateWorkoutTemplateExercise(input: {
   reps?: string;
   notes?: string;
   sortOrder: number;
+  slotType?: string;
+  accessorySlot?: string;
+  accessoryEquipment?: string;
 }) {
   const db = await getDb();
 
   await db.execute(
     `UPDATE workout_template_exercises
-     SET exercise_name = ?, sets = ?, reps = ?, notes = ?, sort_order = ?
+     SET exercise_name = ?, sets = ?, reps = ?, notes = ?, sort_order = ?, slot_type = ?, accessory_slot = ?, accessory_equipment = ?
      WHERE id = ?`,
     [
       input.exerciseName,
@@ -571,6 +667,9 @@ export async function updateWorkoutTemplateExercise(input: {
       input.reps ?? "",
       input.notes ?? "",
       input.sortOrder,
+      input.slotType ?? "",
+      input.accessorySlot ?? "",
+      input.accessoryEquipment ?? "",
       input.id,
     ]
   );
@@ -583,13 +682,16 @@ export async function addWorkoutTemplateExercise(input: {
   reps?: string;
   notes?: string;
   sortOrder: number;
+  slotType?: string;
+  accessorySlot?: string;
+  accessoryEquipment?: string;
 }) {
   const db = await getDb();
 
   await db.execute(
     `INSERT INTO workout_template_exercises
-      (template_id, exercise_name, sort_order, sets, reps, notes)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+      (template_id, exercise_name, sort_order, sets, reps, notes, slot_type, accessory_slot, accessory_equipment)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.templateId,
       input.exerciseName,
@@ -597,6 +699,9 @@ export async function addWorkoutTemplateExercise(input: {
       input.sets ?? "",
       input.reps ?? "",
       input.notes ?? "",
+      input.slotType ?? "",
+      input.accessorySlot ?? "",
+      input.accessoryEquipment ?? "",
     ]
   );
 }
@@ -620,8 +725,93 @@ export type FullWorkoutTemplate = {
     sets: string;
     reps: string;
     notes: string;
+    slot_type?: string;
+    accessory_slot?: string;
+    accessory_equipment?: string;
+    tutorial_url?: string;
+    was_rotated?: boolean;
+    rotation_reason?: string;
   }>;
 };
+
+export type AccessoryCandidate = {
+  id: number;
+  name: string;
+  category: string;
+  equipment?: string | null;
+  accessory_priority?: number | null;
+  accessory_slot?: string | null;
+  tutorial_url?: string | null;
+  last_used_at?: string | null;
+};
+
+export async function getAccessoryCandidates(filters: {
+  accessorySlot: string;
+  equipment?: string;
+}): Promise<AccessoryCandidate[]> {
+  const db = await getDb();
+
+  let query = `
+    SELECT
+      e.id,
+      e.name,
+      e.category,
+      e.equipment,
+      e.accessory_priority,
+      e.accessory_slot,
+      e.tutorial_url,
+      MAX(ws.started_at) as last_used_at
+    FROM exercises e
+    LEFT JOIN exercise_logs el ON el.exercise_name = e.name
+    LEFT JOIN workout_sessions ws ON ws.id = el.session_id
+    WHERE e.role_type = 'accessory'
+      AND e.accessory_slot = ?
+  `;
+
+  const params: string[] = [filters.accessorySlot];
+
+  if (filters.equipment) {
+    query += ` AND e.equipment = ?`;
+    params.push(filters.equipment);
+  }
+
+  query += `
+    GROUP BY
+      e.id,
+      e.name,
+      e.category,
+      e.equipment,
+      e.accessory_priority,
+      e.accessory_slot,
+      e.tutorial_url
+    ORDER BY e.name ASC
+  `;
+
+  return db.select<AccessoryCandidate[]>(query, params);
+}
+
+export async function getRecentlyUsedAccessoryNamesBySlot(
+  accessorySlot: string,
+  limit: number = 2
+): Promise<string[]> {
+  const db = await getDb();
+
+  const rows = await db.select<{ exercise_name: string }[]>(
+    `
+    SELECT DISTINCT el.exercise_name
+    FROM exercise_logs el
+    INNER JOIN workout_sessions ws ON ws.id = el.session_id
+    INNER JOIN exercises e ON e.name = el.exercise_name
+    WHERE e.role_type = 'accessory'
+      AND e.accessory_slot = ?
+    ORDER BY ws.started_at DESC
+    LIMIT ?
+    `,
+    [accessorySlot, limit]
+  );
+
+  return rows.map((row) => row.exercise_name);
+}
 
 export async function getWorkoutTemplateByCodeAndDuration(
   workoutCode: string,
@@ -657,71 +847,125 @@ export async function getWorkoutTemplateByCodeAndDuration(
       sets: string;
       reps: string;
       notes: string;
+      slot_type?: string | null;
+      accessory_slot?: string | null;
+      accessory_equipment?: string | null;
     }>
   >(
-    `SELECT id, exercise_name, sort_order, sets, reps, notes
+    `SELECT
+        id,
+        exercise_name,
+        sort_order,
+        sets,
+        reps,
+        notes,
+        slot_type,
+        accessory_slot,
+        accessory_equipment
      FROM workout_template_exercises
      WHERE template_id = ?
      ORDER BY sort_order ASC, id ASC`,
     [template.id]
   );
 
-  return {
-    ...template,
-    focus: template.focus ?? "",
-    exercises: exerciseRows.map((row) => ({
-      ...row,
+  const resolvedExercises: FullWorkoutTemplate["exercises"] = [];
+  const alreadyChosenNames: string[] = [];
+
+  for (const row of exerciseRows) {
+    const slotType = row.slot_type ?? "";
+    const accessorySlot = row.accessory_slot ?? "";
+    const accessoryEquipment = row.accessory_equipment ?? "";
+
+    if (slotType === "rotating_accessory" && accessorySlot) {
+      const candidates = await getAccessoryCandidates({
+        accessorySlot,
+        equipment: accessoryEquipment || undefined,
+      });
+
+      const recentlyUsedNames = await getRecentlyUsedAccessoryNamesBySlot(
+        accessorySlot,
+        2
+      );
+
+      const { candidate, reason } = chooseAccessoryCandidate(
+        candidates,
+        [...alreadyChosenNames, ...recentlyUsedNames]
+      );
+
+      if (candidate) {
+        alreadyChosenNames.push(candidate.name);
+
+        resolvedExercises.push({
+          id: row.id,
+          exercise_name: candidate.name,
+          sort_order: row.sort_order,
+          sets: row.sets ?? "",
+          reps: row.reps ?? "",
+          notes: row.notes ?? "",
+          slot_type: slotType,
+          accessory_slot: accessorySlot,
+          accessory_equipment: accessoryEquipment,
+          tutorial_url: candidate.tutorial_url ?? "",
+          was_rotated: true,
+          rotation_reason: reason,
+        });
+
+        continue;
+      }
+    }
+
+    if (row.exercise_name) {
+      alreadyChosenNames.push(row.exercise_name);
+    }
+
+    resolvedExercises.push({
+      id: row.id,
+      exercise_name: row.exercise_name ?? "",
+      sort_order: row.sort_order,
       sets: row.sets ?? "",
       reps: row.reps ?? "",
       notes: row.notes ?? "",
-    })),
+      slot_type: slotType,
+      accessory_slot: accessorySlot,
+      accessory_equipment: accessoryEquipment,
+      tutorial_url: "",
+      was_rotated: false,
+      rotation_reason: "",
+    });
+  }
+
+  return {
+    ...template,
+    focus: template.focus ?? "",
+    exercises: resolvedExercises,
   };
 }
 
-export async function getAccessoryCandidates(filters?: {
-  category?: string;
-  equipment?: string;
-}): Promise<
-  Array<{
-    id: number;
-    name: string;
-    category: string;
-    equipment?: string | null;
-    accessory_priority?: number | null;
-    last_used_at?: string | null;
-  }>
-> {
+export async function getSessionsLast7DaysCount(): Promise<number> {
   const db = await getDb();
 
-  let query = `
-    SELECT
-      e.id,
-      e.name,
-      e.category,
-      e.equipment,
-      e.accessory_priority,
-      MAX(ws.started_at) as last_used_at
-    FROM exercises e
-    LEFT JOIN exercise_logs el ON el.exercise_name = e.name
-    LEFT JOIN workout_sessions ws ON ws.id = el.session_id
-    WHERE e.role_type = 'accessory'
-  `;
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const params: string[] = [];
+  const rows = await db.select<{ count: number }[]>(
+    `SELECT COUNT(*) as count
+     FROM workout_sessions
+     WHERE started_at >= ?`,
+    [sevenDaysAgo.toISOString()]
+  );
 
-  if (filters?.category) {
-    query += ` AND e.category = ?`;
-    params.push(filters.category);
-  }
+  return rows[0]?.count ?? 0;
+}
 
-  if (filters?.equipment) {
-    query += ` AND e.equipment = ?`;
-    params.push(filters.equipment);
-  }
+export async function getMostRecentWorkoutCode(): Promise<string> {
+  const db = await getDb();
 
-  query += `
-    GROUP BY e.id, e.name, e.category, e.equipment, e.accessory_priority
-  `;
+  const rows = await db.select<{ workout_code: string }[]>(
+    `SELECT workout_code
+     FROM workout_sessions
+     ORDER BY started_at DESC
+     LIMIT 1`
+  );
 
-  return db.select(query, params);
+  return rows[0]?.workout_code ?? "";
 }
