@@ -1,20 +1,33 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { open } from "@tauri-apps/plugin-shell";
 import {
   completeWorkoutSession,
   createWorkoutSession,
-  insertExerciseLog,
-  getLastExerciseLog,
   getDistinctExerciseCategories,
   getDistinctExerciseEquipment,
   getExercisesFiltered,
-type ExerciseRecord,
+  getLastExerciseLog,
+  insertExerciseLog,
+  type ExerciseRecord,
 } from "../lib/db";
 import { getProgressionDecision } from "../planner/progression";
 import type { PlanResult } from "../planner/planToday";
+import type { AppTheme } from "../theme";
+import {
+  cardStyle,
+  inputStyle,
+  pageStyle,
+  primaryButtonStyle,
+  secondaryButtonStyle,
+  smallMutedTextStyle,
+  tableCellStyle,
+  tableHeaderStyle,
+} from "../themeStyles";
 
 type Props = {
   plan: PlanResult;
   onDone: () => void;
+  theme: AppTheme;
 };
 
 type ExerciseStatus = "completed" | "partial" | "skipped";
@@ -34,48 +47,46 @@ type ExerciseForm = {
   lastActualReps: string;
   lastNotes: string;
   status: ExerciseStatus;
+  tutorialUrl: string;
 };
 
-function getBadgeStyle(outcome: ExerciseForm["progressionOutcome"]) {
-  const base = {
+function getBadgeStyle(theme: AppTheme, outcome: ExerciseForm["progressionOutcome"]) {
+  const base: React.CSSProperties = {
     display: "inline-block",
     padding: "4px 8px",
     borderRadius: 999,
     fontSize: 12,
-    fontWeight: 600 as const,
+    fontWeight: 600,
     marginBottom: 6,
+    border: `1px solid ${theme.borderStrong}`,
   };
 
   switch (outcome) {
     case "increase":
       return {
         ...base,
-        backgroundColor: "#dcfce7",
-        color: "#166534",
-        border: "1px solid #86efac",
+        backgroundColor: theme.successBg,
+        color: theme.successText,
       };
     case "hold":
       return {
         ...base,
-        backgroundColor: "#fef3c7",
-        color: "#92400e",
-        border: "1px solid #fcd34d",
+        backgroundColor: theme.warningBg,
+        color: theme.warningText,
       };
     case "decrease":
       return {
         ...base,
-        backgroundColor: "#fee2e2",
-        color: "#991b1b",
-        border: "1px solid #fca5a5",
+        backgroundColor: theme.dangerBg,
+        color: theme.dangerText,
       };
     default:
       return {
         ...base,
-        backgroundColor: "#e5e7eb",
-        color: "#374151",
-        border: "1px solid #d1d5db",
+        backgroundColor: theme.surfaceElevated,
+        color: theme.textMuted,
       };
-    }
+  }
 }
 
 function getBadgeLabel(outcome: ExerciseForm["progressionOutcome"]) {
@@ -91,37 +102,24 @@ function getBadgeLabel(outcome: ExerciseForm["progressionOutcome"]) {
   }
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "8px 10px",
-  borderRadius: 6,
-  border: "1px solid #cbd5e1",
-  fontSize: 14,
-  boxSizing: "border-box",
-};
-
-const smallMutedText: React.CSSProperties = {
+const labelStyle = (theme: AppTheme): React.CSSProperties => ({
   fontSize: 12,
-  color: "#6b7280",
-  lineHeight: 1.45,
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  color: "#6b7280",
+  color: theme.textSoft,
   marginBottom: 4,
-};
+});
 
 function Field({
   label,
   children,
+  theme,
 }: {
   label: string;
   children: React.ReactNode;
+  theme: AppTheme;
 }) {
   return (
     <div>
-      <div style={labelStyle}>{label}</div>
+      <div style={labelStyle(theme)}>{label}</div>
       {children}
     </div>
   );
@@ -130,9 +128,11 @@ function Field({
 function StatusToggle({
   status,
   onChange,
+  theme,
 }: {
   status: ExerciseStatus;
   onChange: (status: ExerciseStatus) => void;
+  theme: AppTheme;
 }) {
   const buttonBase: React.CSSProperties = {
     padding: "6px 10px",
@@ -140,6 +140,9 @@ function StatusToggle({
     fontSize: 12,
     fontWeight: 600,
     cursor: "pointer",
+    border: `1px solid ${theme.borderStrong}`,
+    backgroundColor: theme.surfaceElevated,
+    color: theme.text,
   };
 
   return (
@@ -149,9 +152,9 @@ function StatusToggle({
         onClick={() => onChange("completed")}
         style={{
           ...buttonBase,
-          border: status === "completed" ? "1px solid #86efac" : "1px solid #d1d5db",
-          backgroundColor: status === "completed" ? "#dcfce7" : "white",
-          color: status === "completed" ? "#166534" : "#374151",
+          backgroundColor:
+            status === "completed" ? theme.successBg : theme.surfaceElevated,
+          color: status === "completed" ? theme.successText : theme.text,
         }}
       >
         Completed
@@ -162,9 +165,9 @@ function StatusToggle({
         onClick={() => onChange("partial")}
         style={{
           ...buttonBase,
-          border: status === "partial" ? "1px solid #93c5fd" : "1px solid #d1d5db",
-          backgroundColor: status === "partial" ? "#dbeafe" : "white",
-          color: status === "partial" ? "#1d4ed8" : "#374151",
+          backgroundColor:
+            status === "partial" ? theme.accentSoft : theme.surfaceElevated,
+          color: status === "partial" ? theme.accent : theme.text,
         }}
       >
         Partial
@@ -175,9 +178,9 @@ function StatusToggle({
         onClick={() => onChange("skipped")}
         style={{
           ...buttonBase,
-          border: status === "skipped" ? "1px solid #fca5a5" : "1px solid #d1d5db",
-          backgroundColor: status === "skipped" ? "#fee2e2" : "white",
-          color: status === "skipped" ? "#991b1b" : "#374151",
+          backgroundColor:
+            status === "skipped" ? theme.dangerBg : theme.surfaceElevated,
+          color: status === "skipped" ? theme.dangerText : theme.text,
         }}
       >
         Skipped
@@ -186,19 +189,20 @@ function StatusToggle({
   );
 }
 
-export default function SessionLogger({ plan, onDone }: Props) {
+export default function SessionLogger({ plan, onDone, theme }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<ExerciseForm[]>([]);
   const [isCompact, setIsCompact] = useState(window.innerWidth < 1100);
+
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [exerciseSearch, setExerciseSearch] = useState("");
   const [exerciseCategory, setExerciseCategory] = useState("");
   const [exerciseEquipment, setExerciseEquipment] = useState("");
   const [availableExercises, setAvailableExercises] = useState<ExerciseRecord[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
-  const [availableEquipment, setAvailableEquipment] = useState<string[]>([]);    
+  const [availableEquipment, setAvailableEquipment] = useState<string[]>([]);
 
   useEffect(() => {
     function handleResize() {
@@ -210,14 +214,25 @@ export default function SessionLogger({ plan, onDone }: Props) {
   }, []);
 
   useEffect(() => {
+    async function loadFilterOptions() {
+      const categories = await getDistinctExerciseCategories();
+      const equipment = await getDistinctExerciseEquipment();
+      setAvailableCategories(categories);
+      setAvailableEquipment(equipment);
+    }
+
+    loadFilterOptions();
+  }, []);
+
+  useEffect(() => {
     async function loadWithSuggestions() {
       if (!plan.template) return;
 
       const newEntries: ExerciseForm[] = [];
 
-  for (const exercise of plan.template.exercises) {
-    const lastLog = await getLastExerciseLog(exercise.exercise_name);
-    const decision = getProgressionDecision(exercise.exercise_name, lastLog);
+      for (const exercise of plan.template.exercises) {
+        const lastLog = await getLastExerciseLog(exercise.exercise_name);
+        const decision = getProgressionDecision(exercise.exercise_name, lastLog);
 
         newEntries.push({
           exerciseName: exercise.exercise_name,
@@ -234,6 +249,7 @@ export default function SessionLogger({ plan, onDone }: Props) {
           lastActualReps: lastLog?.actual_reps ?? "",
           lastNotes: lastLog?.notes ?? "",
           status: "completed",
+          tutorialUrl: exercise.tutorial_url ?? "",
         });
       }
 
@@ -243,16 +259,21 @@ export default function SessionLogger({ plan, onDone }: Props) {
     loadWithSuggestions();
   }, [plan]);
 
-  useEffect(() => {
-    async function loadFilterOptions() {
-      const categories = await getDistinctExerciseCategories();
-      const equipment = await getDistinctExerciseEquipment();
-      setAvailableCategories(categories);
-      setAvailableEquipment(equipment);
-    }
+  function updateEntry(index: number, field: keyof ExerciseForm, value: string) {
+    setEntries((current) =>
+      current.map((entry, i) =>
+        i === index ? { ...entry, [field]: value } : entry
+      )
+    );
+  }
 
-    loadFilterOptions();
-  }, []);
+  function updateStatus(index: number, status: ExerciseStatus) {
+    setEntries((current) =>
+      current.map((entry, i) =>
+        i === index ? { ...entry, status } : entry
+      )
+    );
+  }
 
   async function searchExercisesForAdd() {
     const rows = await getExercisesFiltered({
@@ -263,6 +284,7 @@ export default function SessionLogger({ plan, onDone }: Props) {
 
     setAvailableExercises(rows);
   }
+
   async function addExerciseToSession(exercise: ExerciseRecord) {
     const lastLog = await getLastExerciseLog(exercise.name);
     const decision = getProgressionDecision(exercise.name, lastLog);
@@ -282,6 +304,7 @@ export default function SessionLogger({ plan, onDone }: Props) {
       lastActualReps: lastLog?.actual_reps ?? "",
       lastNotes: lastLog?.notes ?? "",
       status: "completed",
+      tutorialUrl: exercise.tutorial_url ?? "",
     };
 
     setEntries((current) => [...current, newEntry]);
@@ -290,21 +313,6 @@ export default function SessionLogger({ plan, onDone }: Props) {
     setExerciseSearch("");
     setExerciseCategory("");
     setExerciseEquipment("");
-}
-  function updateEntry(index: number, field: keyof ExerciseForm, value: string) {
-    setEntries((current) =>
-      current.map((entry, i) =>
-        i === index ? { ...entry, [field]: value } : entry
-      )
-    );
-  }
-
-  function updateStatus(index: number, status: ExerciseStatus) {
-    setEntries((current) =>
-      current.map((entry, i) =>
-        i === index ? { ...entry, status } : entry
-      )
-    );
   }
 
   async function handleSaveSession() {
@@ -361,24 +369,24 @@ export default function SessionLogger({ plan, onDone }: Props) {
 
   function renderLastSession(entry: ExerciseForm) {
     return entry.lastWeight || entry.lastActualSets || entry.lastActualReps || entry.lastNotes ? (
-      <div style={smallMutedText}>
+      <div style={smallMutedTextStyle(theme)}>
         <div><strong>Weight:</strong> {entry.lastWeight || "-"}</div>
         <div><strong>Sets:</strong> {entry.lastActualSets || "-"}</div>
         <div><strong>Reps:</strong> {entry.lastActualReps || "-"}</div>
         <div><strong>Notes:</strong> {entry.lastNotes || "-"}</div>
       </div>
     ) : (
-      <span style={smallMutedText}>No prior log</span>
+      <span style={smallMutedTextStyle(theme)}>No prior log</span>
     );
   }
 
   function renderProgression(entry: ExerciseForm) {
     return (
       <div>
-        <div style={getBadgeStyle(entry.progressionOutcome)}>
+        <div style={getBadgeStyle(theme, entry.progressionOutcome)}>
           {getBadgeLabel(entry.progressionOutcome)}
         </div>
-        <div style={smallMutedText}>{entry.progressionReason}</div>
+        <div style={smallMutedTextStyle(theme)}>{entry.progressionReason}</div>
       </div>
     );
   }
@@ -389,49 +397,54 @@ export default function SessionLogger({ plan, onDone }: Props) {
   const totalCount = entries.length;
 
   return (
-    <div style={{ padding: 24, fontFamily: "sans-serif", maxWidth: 1280, margin: "0 auto" }}>
+    <div style={pageStyle(theme)}>
       <h1 style={{ marginBottom: 8 }}>Log Session</h1>
 
       <div
         style={{
+          ...cardStyle(theme),
           marginBottom: 20,
           padding: 16,
-          border: "1px solid #e5e7eb",
-          borderRadius: 10,
-          backgroundColor: "#fafafa",
+          backgroundColor: theme.surface,
         }}
       >
         <p style={{ margin: "0 0 6px 0" }}>
           <strong>{plan.template?.title}</strong>
         </p>
-        <p style={{ margin: 0, color: "#4b5563" }}>{plan.reason}</p>
+        <p style={{ margin: 0, color: theme.textMuted }}>{plan.reason}</p>
       </div>
 
-      {error && <p style={{ color: "#b91c1c", marginBottom: 12 }}>{error}</p>}
-      {saved && <p style={{ color: "#166534", marginBottom: 12 }}>Session saved successfully.</p>}
+      {error && <p style={{ color: theme.dangerText, marginBottom: 12 }}>{error}</p>}
+      {saved && <p style={{ color: theme.successText, marginBottom: 12 }}>Session saved successfully.</p>}
 
       {!isCompact ? (
-        <div style={{ overflowX: "auto" }}>
+        <div
+          style={{
+            ...cardStyle(theme),
+            overflowX: "auto",
+            backgroundColor: theme.surface,
+          }}
+        >
           <table
             cellPadding={10}
             style={{
               borderCollapse: "collapse",
               width: "100%",
-              minWidth: 1400,
-              border: "1px solid #e5e7eb",
+              minWidth: 1500,
             }}
           >
             <thead>
-              <tr style={{ backgroundColor: "#f8fafc" }}>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Exercise</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Status</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Plan</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Suggested Weight</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Actual Sets</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Actual Reps</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Notes</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Last Session</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>Progression</th>
+              <tr>
+                <th style={tableHeaderStyle(theme)}>Exercise</th>
+                <th style={tableHeaderStyle(theme)}>Tutorial</th>
+                <th style={tableHeaderStyle(theme)}>Status</th>
+                <th style={tableHeaderStyle(theme)}>Plan</th>
+                <th style={tableHeaderStyle(theme)}>Suggested Weight</th>
+                <th style={tableHeaderStyle(theme)}>Actual Sets</th>
+                <th style={tableHeaderStyle(theme)}>Actual Reps</th>
+                <th style={tableHeaderStyle(theme)}>Notes</th>
+                <th style={tableHeaderStyle(theme)}>Last Session</th>
+                <th style={tableHeaderStyle(theme)}>Progression</th>
               </tr>
             </thead>
 
@@ -446,40 +459,66 @@ export default function SessionLogger({ plan, onDone }: Props) {
                     style={{
                       opacity: isSkipped ? 0.6 : 1,
                       backgroundColor: isSkipped
-                        ? "#fafafa"
+                        ? theme.surfaceMuted
                         : isPartial
-                        ? "#eff6ff"
-                        : "white",
+                        ? theme.accentSoft
+                        : theme.surface,
                     }}
                   >
-                    <td style={{ borderBottom: "1px solid #f1f5f9", fontWeight: 600 }}>
-                      {entry.exerciseName}
+                    <td style={tableCellStyle(theme)}>
+                      <strong>{entry.exerciseName}</strong>
                     </td>
 
-                    <td style={{ borderBottom: "1px solid #f1f5f9", minWidth: 190 }}>
+                    <td style={tableCellStyle(theme)}>
+                      {entry.tutorialUrl ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await open(entry.tutorialUrl);
+                            } catch (err) {
+                              console.error("TUTORIAL OPEN ERROR:", err);
+                            }
+                          }}
+                          style={{
+                            ...secondaryButtonStyle(theme),
+                            padding: "6px 10px",
+                            fontSize: 14,
+                          }}
+                          title="Open tutorial"
+                        >
+                          📺
+                        </button>
+                      ) : (
+                        <span style={smallMutedTextStyle(theme)}>—</span>
+                      )}
+                    </td>
+
+                    <td style={tableCellStyle(theme)}>
                       <StatusToggle
                         status={entry.status}
                         onChange={(status) => updateStatus(index, status)}
+                        theme={theme}
                       />
                     </td>
 
-                    <td style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={tableCellStyle(theme)}>
                       <div>{entry.plannedSets} sets</div>
-                      <div style={smallMutedText}>{entry.plannedReps} reps</div>
+                      <div style={smallMutedTextStyle(theme)}>{entry.plannedReps} reps</div>
                     </td>
 
-                    <td style={{ borderBottom: "1px solid #f1f5f9", minWidth: 130 }}>
+                    <td style={tableCellStyle(theme)}>
                       <input
-                        style={inputStyle}
+                        style={inputStyle(theme)}
                         disabled={isSkipped}
                         value={entry.weight}
                         onChange={(e) => updateEntry(index, "weight", e.target.value)}
                       />
                     </td>
 
-                    <td style={{ borderBottom: "1px solid #f1f5f9", minWidth: 120 }}>
+                    <td style={tableCellStyle(theme)}>
                       <input
-                        style={inputStyle}
+                        style={inputStyle(theme)}
                         disabled={isSkipped}
                         placeholder={entry.plannedSets}
                         value={entry.actualSets}
@@ -487,9 +526,9 @@ export default function SessionLogger({ plan, onDone }: Props) {
                       />
                     </td>
 
-                    <td style={{ borderBottom: "1px solid #f1f5f9", minWidth: 150 }}>
+                    <td style={tableCellStyle(theme)}>
                       <input
-                        style={inputStyle}
+                        style={inputStyle(theme)}
                         disabled={isSkipped}
                         placeholder={entry.plannedReps}
                         value={entry.actualReps}
@@ -497,9 +536,9 @@ export default function SessionLogger({ plan, onDone }: Props) {
                       />
                     </td>
 
-                    <td style={{ borderBottom: "1px solid #f1f5f9", minWidth: 180 }}>
+                    <td style={tableCellStyle(theme)}>
                       <input
-                        style={inputStyle}
+                        style={inputStyle(theme)}
                         disabled={isSkipped}
                         placeholder={isPartial ? "what was modified?" : "optional notes"}
                         value={entry.notes}
@@ -507,13 +546,9 @@ export default function SessionLogger({ plan, onDone }: Props) {
                       />
                     </td>
 
-                    <td style={{ borderBottom: "1px solid #f1f5f9", minWidth: 220 }}>
-                      {renderLastSession(entry)}
-                    </td>
+                    <td style={tableCellStyle(theme)}>{renderLastSession(entry)}</td>
 
-                    <td style={{ borderBottom: "1px solid #f1f5f9", minWidth: 260, verticalAlign: "top" }}>
-                      {renderProgression(entry)}
-                    </td>
+                    <td style={tableCellStyle(theme)}>{renderProgression(entry)}</td>
                   </tr>
                 );
               })}
@@ -530,30 +565,62 @@ export default function SessionLogger({ plan, onDone }: Props) {
               <div
                 key={`${entry.exerciseName}-${index}`}
                 style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
+                  ...cardStyle(theme),
                   padding: 16,
                   backgroundColor: isSkipped
-                    ? "#fafafa"
+                    ? theme.surfaceMuted
                     : isPartial
-                    ? "#eff6ff"
-                    : "white",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    ? theme.accentSoft
+                    : theme.surface,
                   opacity: isSkipped ? 0.7 : 1,
                 }}
               >
                 <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontWeight: 700, fontSize: 16 }}>{entry.exerciseName}</div>
-                  <div style={smallMutedText}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: 16 }}>
+                      {entry.exerciseName}
+                    </div>
+
+                    {entry.tutorialUrl && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await open(entry.tutorialUrl);
+                          } catch (err) {
+                            console.error("TUTORIAL OPEN ERROR:", err);
+                          }
+                        }}
+                        style={{
+                          ...secondaryButtonStyle(theme),
+                          padding: "6px 10px",
+                          fontSize: 14,
+                        }}
+                        title="Open tutorial"
+                      >
+                        📺
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={smallMutedTextStyle(theme)}>
                     Plan: {entry.plannedSets} sets · {entry.plannedReps} reps
                   </div>
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
-                  <Field label="Status">
+                  <Field label="Status" theme={theme}>
                     <StatusToggle
                       status={entry.status}
                       onChange={(status) => updateStatus(index, status)}
+                      theme={theme}
                     />
                   </Field>
                 </div>
@@ -570,18 +637,18 @@ export default function SessionLogger({ plan, onDone }: Props) {
                     marginBottom: 12,
                   }}
                 >
-                  <Field label="Suggested Weight">
+                  <Field label="Suggested Weight" theme={theme}>
                     <input
-                      style={inputStyle}
+                      style={inputStyle(theme)}
                       disabled={isSkipped}
                       value={entry.weight}
                       onChange={(e) => updateEntry(index, "weight", e.target.value)}
                     />
                   </Field>
 
-                  <Field label="Actual Sets">
+                  <Field label="Actual Sets" theme={theme}>
                     <input
-                      style={inputStyle}
+                      style={inputStyle(theme)}
                       disabled={isSkipped}
                       placeholder={entry.plannedSets}
                       value={entry.actualSets}
@@ -589,9 +656,9 @@ export default function SessionLogger({ plan, onDone }: Props) {
                     />
                   </Field>
 
-                  <Field label="Actual Reps">
+                  <Field label="Actual Reps" theme={theme}>
                     <input
-                      style={inputStyle}
+                      style={inputStyle(theme)}
                       disabled={isSkipped}
                       placeholder={entry.plannedReps}
                       value={entry.actualReps}
@@ -599,9 +666,9 @@ export default function SessionLogger({ plan, onDone }: Props) {
                     />
                   </Field>
 
-                  <Field label="Notes">
+                  <Field label="Notes" theme={theme}>
                     <input
-                      style={inputStyle}
+                      style={inputStyle(theme)}
                       disabled={isSkipped}
                       placeholder={isPartial ? "what was modified?" : "optional notes"}
                       value={entry.notes}
@@ -614,10 +681,10 @@ export default function SessionLogger({ plan, onDone }: Props) {
                   style={{
                     marginTop: 8,
                     paddingTop: 12,
-                    borderTop: "1px solid #f1f5f9",
+                    borderTop: `1px solid ${theme.border}`,
                   }}
                 >
-                  <div style={{ ...labelStyle, marginBottom: 6 }}>Last Session</div>
+                  <div style={{ ...labelStyle(theme), marginBottom: 6 }}>Last Session</div>
                   {renderLastSession(entry)}
                 </div>
               </div>
@@ -626,153 +693,127 @@ export default function SessionLogger({ plan, onDone }: Props) {
         </div>
       )}
 
-      <div
-        style={{
-          marginTop: 20,
-          padding: 16,
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          backgroundColor: "#f8fafc",
-        }}
-      >
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowAddExercise((v) => !v)}
-            style={{
-              padding: "10px 16px",
-              borderRadius: 8,
-              border: "1px solid #cbd5e1",
-              backgroundColor: "white",
-              cursor: "pointer",
-            }}
-          >
-            {showAddExercise ? "Close Add Exercise" : "Add Exercise"}
-          </button>
-        </div>
+      <div style={{ marginTop: 20 }}>
+        <button
+          type="button"
+          onClick={() => setShowAddExercise((v) => !v)}
+          style={secondaryButtonStyle(theme)}
+        >
+          {showAddExercise ? "Close Add Exercise" : "Add Exercise"}
+        </button>
+      </div>
 
-        {showAddExercise && (
+      {showAddExercise && (
+        <div
+          style={{
+            ...cardStyle(theme),
+            marginTop: 16,
+            padding: 16,
+            backgroundColor: theme.surface,
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Add Exercise</h3>
+
           <div
             style={{
-              marginTop: 16,
-              padding: 16,
-              border: "1px solid #e5e7eb",
-              borderRadius: 12,
-              backgroundColor: "#fafafa",
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr auto",
+              gap: 12,
+              alignItems: "end",
+              marginBottom: 16,
             }}
           >
-            <h3 style={{ marginTop: 0 }}>Add Exercise</h3>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isCompact ? "1fr" : "1fr 1fr 1fr auto",
-                gap: 12,
-                alignItems: "end",
-                marginBottom: 16,
-              }}
-            >
-              <div>
-                <div style={labelStyle}>Search</div>
-                <input
-                  style={inputStyle}
-                  value={exerciseSearch}
-                  onChange={(e) => setExerciseSearch(e.target.value)}
-                  placeholder="Exercise name"
-                />
-              </div>
-
-              <div>
-                <div style={labelStyle}>Category</div>
-                <select
-                  style={inputStyle}
-                  value={exerciseCategory}
-                  onChange={(e) => setExerciseCategory(e.target.value)}
-                >
-                  <option value="">All</option>
-                  {availableCategories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div style={labelStyle}>Equipment</div>
-                <select
-                  style={inputStyle}
-                  value={exerciseEquipment}
-                  onChange={(e) => setExerciseEquipment(e.target.value)}
-                >
-                  <option value="">All</option>
-                  {availableEquipment.map((e) => (
-                    <option key={e} value={e}>{e}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="button"
-                onClick={searchExercisesForAdd}
-                style={{
-                  height: 38,
-                  padding: "0 14px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  backgroundColor: "white",
-                  cursor: "pointer",
-                }}
-              >
-                Search
-              </button>
+            <div>
+              <div style={labelStyle(theme)}>Search</div>
+              <input
+                style={inputStyle(theme)}
+                value={exerciseSearch}
+                onChange={(e) => setExerciseSearch(e.target.value)}
+                placeholder="Exercise name"
+              />
             </div>
 
-            {availableExercises.length > 0 && (
-              <div style={{ display: "grid", gap: 10 }}>
-                {availableExercises.map((exercise) => (
-                  <div
-                    key={exercise.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: 12,
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 10,
-                      backgroundColor: "white",
-                    }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600 }}>{exercise.name}</div>
-                      <div style={smallMutedText}>
-                        {exercise.category} {exercise.equipment ? `· ${exercise.equipment}` : ""}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => addExerciseToSession(exercise)}
-                      style={{
-                        padding: "8px 12px",
-                        borderRadius: 8,
-                        border: "1px solid #cbd5e1",
-                        backgroundColor: "white",
-                        cursor: "pointer",
-                        flexShrink: 0,
-                      }}
-                    >
-                      Add
-                    </button>
-                  </div>
+            <div>
+              <div style={labelStyle(theme)}>Category</div>
+              <select
+                style={inputStyle(theme)}
+                value={exerciseCategory}
+                onChange={(e) => setExerciseCategory(e.target.value)}
+              >
+                <option value="">All</option>
+                {availableCategories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
                 ))}
-              </div>
-            )}
+              </select>
+            </div>
 
-            {availableExercises.length === 0 && (
-              <div style={smallMutedText}>Run a search to choose an exercise.</div>
-            )}
+            <div>
+              <div style={labelStyle(theme)}>Equipment</div>
+              <select
+                style={inputStyle(theme)}
+                value={exerciseEquipment}
+                onChange={(e) => setExerciseEquipment(e.target.value)}
+              >
+                <option value="">All</option>
+                {availableEquipment.map((e) => (
+                  <option key={e} value={e}>{e}</option>
+                ))}
+              </select>
+            </div>
+
+            <button type="button" onClick={searchExercisesForAdd} style={primaryButtonStyle(theme)}>
+              Search
+            </button>
           </div>
-        )}
+
+          {availableExercises.length > 0 ? (
+            <div style={{ display: "grid", gap: 10 }}>
+              {availableExercises.map((exercise) => (
+                <div
+                  key={exercise.id}
+                  style={{
+                    ...cardStyle(theme),
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: 12,
+                    backgroundColor: theme.surfaceElevated,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{exercise.name}</div>
+                    <div style={smallMutedTextStyle(theme)}>
+                      {exercise.category}
+                      {exercise.equipment ? ` · ${exercise.equipment}` : ""}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => addExerciseToSession(exercise)}
+                    style={secondaryButtonStyle(theme)}
+                  >
+                    Add
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={smallMutedTextStyle(theme)}>
+              Run a search to choose an exercise.
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        style={{
+          ...cardStyle(theme),
+          marginTop: 20,
+          padding: 16,
+          backgroundColor: theme.surface,
+        }}
+      >
         <div style={{ fontWeight: 700, marginBottom: 10 }}>Session Summary</div>
 
         <div
@@ -787,9 +828,9 @@ export default function SessionLogger({ plan, onDone }: Props) {
             style={{
               padding: "6px 10px",
               borderRadius: 999,
-              backgroundColor: "#dcfce7",
-              color: "#166534",
-              border: "1px solid #86efac",
+              backgroundColor: theme.successBg,
+              color: theme.successText,
+              border: `1px solid ${theme.borderStrong}`,
               fontSize: 12,
               fontWeight: 600,
             }}
@@ -801,9 +842,9 @@ export default function SessionLogger({ plan, onDone }: Props) {
             style={{
               padding: "6px 10px",
               borderRadius: 999,
-              backgroundColor: "#dbeafe",
-              color: "#1d4ed8",
-              border: "1px solid #93c5fd",
+              backgroundColor: theme.accentSoft,
+              color: theme.accent,
+              border: `1px solid ${theme.borderStrong}`,
               fontSize: 12,
               fontWeight: 600,
             }}
@@ -815,9 +856,9 @@ export default function SessionLogger({ plan, onDone }: Props) {
             style={{
               padding: "6px 10px",
               borderRadius: 999,
-              backgroundColor: "#fee2e2",
-              color: "#991b1b",
-              border: "1px solid #fca5a5",
+              backgroundColor: theme.dangerBg,
+              color: theme.dangerText,
+              border: `1px solid ${theme.borderStrong}`,
               fontSize: 12,
               fontWeight: 600,
             }}
@@ -829,9 +870,9 @@ export default function SessionLogger({ plan, onDone }: Props) {
             style={{
               padding: "6px 10px",
               borderRadius: 999,
-              backgroundColor: "#e5e7eb",
-              color: "#374151",
-              border: "1px solid #d1d5db",
+              backgroundColor: theme.surfaceElevated,
+              color: theme.textMuted,
+              border: `1px solid ${theme.borderStrong}`,
               fontSize: 12,
               fontWeight: 600,
             }}
@@ -841,14 +882,16 @@ export default function SessionLogger({ plan, onDone }: Props) {
         </div>
 
         {skippedCount === totalCount && totalCount > 0 && (
-          <div style={{ fontSize: 12, color: "#991b1b" }}>
-            Everything is marked skipped. Saving is disabled until at least one exercise is completed or partial.
+          <div style={{ fontSize: 12, color: theme.dangerText }}>
+            Everything is marked skipped. Saving is disabled until at least one
+            exercise is completed or partial.
           </div>
         )}
 
         {partialCount > 0 && (
-          <div style={{ fontSize: 12, color: "#1d4ed8" }}>
-            Partial exercises will be saved with a partial note so you can review them later.
+          <div style={{ fontSize: 12, color: theme.accent }}>
+            Partial exercises will be saved with a partial note so you can
+            review them later.
           </div>
         )}
       </div>
@@ -858,12 +901,7 @@ export default function SessionLogger({ plan, onDone }: Props) {
           onClick={handleSaveSession}
           disabled={saving || saved || (totalCount > 0 && skippedCount === totalCount)}
           style={{
-            padding: "10px 16px",
-            borderRadius: 8,
-            border: "1px solid #cbd5e1",
-            backgroundColor: "#111827",
-            color: "white",
-            cursor: "pointer",
+            ...primaryButtonStyle(theme),
             opacity: saving || saved || (totalCount > 0 && skippedCount === totalCount) ? 0.6 : 1,
           }}
         >
@@ -872,13 +910,7 @@ export default function SessionLogger({ plan, onDone }: Props) {
 
         <button
           onClick={onDone}
-          style={{
-            padding: "10px 16px",
-            borderRadius: 8,
-            border: "1px solid #cbd5e1",
-            backgroundColor: "white",
-            cursor: "pointer",
-          }}
+          style={secondaryButtonStyle(theme)}
         >
           Back to Planner
         </button>

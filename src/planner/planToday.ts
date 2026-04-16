@@ -1,6 +1,6 @@
+import type { ResolvedWorkoutTemplate, WorkoutDuration, WorkoutMode } from "../types/workouts";
 export type ModePreference = "auto" | "chaos" | "steady";
 export type EnergyLevel = "low" | "medium" | "high";
-export type WorkoutDuration = "MED" | "30" | "60" | "75";
 
 export type PlanInput = {
   minutes: number;
@@ -11,32 +11,11 @@ export type PlanInput = {
 };
 
 export type PlanResult = {
-  mode: "CHAOS" | "STEADY";
+  mode: WorkoutMode;
   workoutCode: string;
   duration: WorkoutDuration;
   reason: string;
-  template?: {
-    id: number;
-    code: string;
-    title: string;
-    mode: "CHAOS" | "STEADY";
-    duration: WorkoutDuration;
-    focus: string;
-    exercises: Array<{
-      id: number;
-      exercise_name: string;
-      sort_order: number;
-      sets: string;
-      reps: string;
-      notes: string;
-      slot_type?: string;
-      accessory_slot?: string;
-      accessory_equipment?: string;
-      tutorial_url?: string;
-      was_rotated?: boolean;
-      rotation_reason?: string;
-    }>;
-  };
+  template?: ResolvedWorkoutTemplate;
 };
 
 function getDuration(minutes: number, energy: EnergyLevel): WorkoutDuration {

@@ -1,3 +1,4 @@
+import type { ResolvedWorkoutTemplate } from "../types/workouts";
 import { chooseAccessoryCandidate } from "../planner/accessoryRotation";
 import Database from "@tauri-apps/plugin-sql";
 
@@ -711,29 +712,6 @@ export async function deleteWorkoutTemplateExercise(id: number) {
   await db.execute(`DELETE FROM workout_template_exercises WHERE id = ?`, [id]);
 }
 
-export type FullWorkoutTemplate = {
-  id: number;
-  code: string;
-  title: string;
-  mode: "CHAOS" | "STEADY";
-  duration: "MED" | "30" | "60" | "75";
-  focus: string;
-  exercises: Array<{
-    id: number;
-    exercise_name: string;
-    sort_order: number;
-    sets: string;
-    reps: string;
-    notes: string;
-    slot_type?: string;
-    accessory_slot?: string;
-    accessory_equipment?: string;
-    tutorial_url?: string;
-    was_rotated?: boolean;
-    rotation_reason?: string;
-  }>;
-};
-
 export type AccessoryCandidate = {
   id: number;
   name: string;
@@ -816,7 +794,7 @@ export async function getRecentlyUsedAccessoryNamesBySlot(
 export async function getWorkoutTemplateByCodeAndDuration(
   workoutCode: string,
   duration: "MED" | "30" | "60" | "75"
-): Promise<FullWorkoutTemplate | null> {
+): Promise<ResolvedWorkoutTemplate | null> {
   const db = await getDb();
 
   const templateRows = await db.select<
@@ -868,7 +846,7 @@ export async function getWorkoutTemplateByCodeAndDuration(
     [template.id]
   );
 
-  const resolvedExercises: FullWorkoutTemplate["exercises"] = [];
+  const resolvedExercises: ResolvedWorkoutTemplate["exercises"] = [];
   const alreadyChosenNames: string[] = [];
 
   for (const row of exerciseRows) {
@@ -968,4 +946,110 @@ export async function getMostRecentWorkoutCode(): Promise<string> {
   );
 
   return rows[0]?.workout_code ?? "";
+}
+
+export async function updateExerciseLog(input: {
+  id: number;
+  weight?: string;
+  actualSets?: string;
+  actualReps?: string;
+  notes?: string;
+}) {
+  const db = await getDb();
+
+  await db.execute(
+    `UPDATE exercise_logs
+     SET weight = ?, actual_sets = ?, actual_reps = ?, notes = ?
+     WHERE id = ?`,
+    [
+      input.weight ?? "",
+      input.actualSets ?? "",
+      input.actualReps ?? "",
+      input.notes ?? "",
+      input.id,
+    ]
+  );
+}
+
+export async function deleteExerciseLog(id: number) {
+  const db = await getDb();
+
+  await db.execute(`DELETE FROM exercise_logs WHERE id = ?`, [id]);
+}
+
+export async function deleteWorkoutSession(sessionId: number) {
+  const db = await getDb();
+
+  await db.execute(`DELETE FROM exercise_logs WHERE session_id = ?`, [sessionId]);
+  await db.execute(`DELETE FROM workout_sessions WHERE id = ?`, [sessionId]);
+}
+
+export async function getExerciseByName(
+  name: string
+): Promise<ExerciseRecord | null> {
+  const db = await getDb();
+
+  const rows = await db.select<ExerciseRecord[]>(
+    `SELECT
+      id,
+      name,
+      category,
+      movement_pattern,
+      primary_muscles,
+      equipment,
+      notes,
+      role_type,
+      accessory_priority,
+      tutorial_url,
+      accessory_slot
+     FROM exercises
+     WHERE LOWER(name) = LOWER(?)
+     LIMIT 1`,
+    [name]
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function upsertImportedExercise(input: {
+  name: string;
+  category: string;
+  primaryMuscles: string;
+  accessorySlot: string;
+  tutorialUrl: string;
+}) {
+  const existing = await getExerciseByName(input.name);
+
+  if (existing) {
+    await updateExercise({
+      id: existing.id,
+      name: input.name,
+      category: input.category,
+      movementPattern: existing.movement_pattern ?? "",
+      primaryMuscles: input.primaryMuscles,
+      equipment: existing.equipment ?? "",
+      notes: existing.notes ?? "",
+      roleType: existing.role_type ?? "accessory",
+      accessoryPriority: existing.accessory_priority ?? 5,
+      tutorialUrl: input.tutorialUrl,
+      accessorySlot: input.accessorySlot,
+    });
+
+    return { action: "updated" as const, id: existing.id };
+  }
+
+  await createExercise({
+    name: input.name,
+    category: input.category,
+    movementPattern: "",
+    primaryMuscles: input.primaryMuscles,
+    equipment: "",
+    notes: "",
+    roleType: "accessory",
+    accessoryPriority: 5,
+    tutorialUrl: input.tutorialUrl,
+    accessorySlot: input.accessorySlot,
+  });
+
+  return { action: "created" as const };
 }

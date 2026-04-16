@@ -11,9 +11,19 @@ import {
   getWorkoutTemplateByCodeAndDuration,
   initDb,
 } from "../lib/db";
+import type { AppTheme } from "../theme";
+import {
+  cardStyle,
+  inputStyle,
+  pageStyle,
+  primaryButtonStyle,
+  smallMutedTextStyle,
+  tableCellStyle,
+  tableHeaderStyle,
+} from "../themeStyles";
 import SessionLogger from "./SessionLogger";
 
-function getRotationBadgeStyle(reason?: string) {
+function getRotationBadgeStyle(theme: AppTheme, reason?: string) {
   const text = (reason ?? "").toLowerCase();
 
   const base: React.CSSProperties = {
@@ -29,26 +39,26 @@ function getRotationBadgeStyle(reason?: string) {
   if (text.includes("fallback used")) {
     return {
       ...base,
-      backgroundColor: "#fee2e2",
-      color: "#991b1b",
-      border: "1px solid #fca5a5",
+      backgroundColor: theme.dangerBg,
+      color: theme.dangerText,
+      border: `1px solid ${theme.borderStrong}`,
     };
   }
 
   if (text.includes("recently avoided")) {
     return {
       ...base,
-      backgroundColor: "#dbeafe",
-      color: "#1d4ed8",
-      border: "1px solid #93c5fd",
+      backgroundColor: theme.accentSoft,
+      color: theme.accent,
+      border: `1px solid ${theme.borderStrong}`,
     };
   }
 
   return {
     ...base,
-    backgroundColor: "#e5e7eb",
-    color: "#374151",
-    border: "1px solid #d1d5db",
+    backgroundColor: theme.surfaceElevated,
+    color: theme.textMuted,
+    border: `1px solid ${theme.borderStrong}`,
   };
 }
 
@@ -60,7 +70,7 @@ function getRotationBadgeLabel(reason?: string) {
   return "Rotated";
 }
 
-export default function PlanToday() {
+export default function PlanToday({ theme }: { theme: AppTheme }) {
   const [minutes, setMinutes] = useState(30);
   const [energy, setEnergy] = useState<EnergyLevel>("medium");
   const [modePreference, setModePreference] =
@@ -129,28 +139,40 @@ export default function PlanToday() {
     }
   }
 
-  function resetOverridesToAuto() {
-    setSessionsLast7Days(autoSessionsLast7Days);
-    setLastWorkout(autoLastWorkout);
-    setOverrideHistoryInputs(false);
-  }
-
   if (started && result) {
-    return <SessionLogger plan={result} onDone={() => setStarted(false)} />;
+    return (
+      <SessionLogger
+        plan={result}
+        onDone={() => setStarted(false)}
+        theme={theme}
+      />
+    );
   }
 
   return (
-    <div style={{ padding: 20, fontFamily: "sans-serif", maxWidth: 950 }}>
-      <h1>Plan Today</h1>
-      <p>
+    <div style={pageStyle(theme)}>
+      <h1 style={{ marginBottom: 8 }}>Plan Today</h1>
+      <p style={smallMutedTextStyle(theme)}>
         Choose your available time and current situation, then get a recommended
         workout.
       </p>
 
-      <div style={{ display: "grid", gap: 16, marginTop: 20 }}>
+      <div
+        style={{
+          ...cardStyle(theme),
+          padding: 20,
+          marginTop: 20,
+          display: "grid",
+          gap: 16,
+          backgroundColor: theme.surface,
+        }}
+      >
         <label>
-          <div style={{ marginBottom: 6 }}>Minutes available</div>
+          <div style={{ marginBottom: 6, color: theme.textMuted }}>
+            Minutes available
+          </div>
           <select
+            style={inputStyle(theme)}
             value={minutes}
             onChange={(e) => setMinutes(Number(e.target.value))}
           >
@@ -162,8 +184,9 @@ export default function PlanToday() {
         </label>
 
         <label>
-          <div style={{ marginBottom: 6 }}>Energy</div>
+          <div style={{ marginBottom: 6, color: theme.textMuted }}>Energy</div>
           <select
+            style={inputStyle(theme)}
             value={energy}
             onChange={(e) => setEnergy(e.target.value as EnergyLevel)}
           >
@@ -174,8 +197,11 @@ export default function PlanToday() {
         </label>
 
         <label>
-          <div style={{ marginBottom: 6 }}>Mode preference</div>
+          <div style={{ marginBottom: 6, color: theme.textMuted }}>
+            Mode preference
+          </div>
           <select
+            style={inputStyle(theme)}
             value={modePreference}
             onChange={(e) => setModePreference(e.target.value as ModePreference)}
           >
@@ -187,50 +213,21 @@ export default function PlanToday() {
 
         <div
           style={{
-            border: "1px solid #e5e7eb",
-            borderRadius: 10,
+            backgroundColor: theme.surfaceMuted,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 12,
             padding: 14,
-            backgroundColor: "#fafafa",
           }}
         >
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>
-            Training history defaults
-          </div>
-
-          <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
-            Autofilled from your saved sessions. Turn on override if you want to
-            change them manually for today.
-          </div>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-            <div
-              style={{
-                padding: "6px 10px",
-                border: "1px solid #d1d5db",
-                borderRadius: 999,
-                fontSize: 12,
-                color: "#374151",
-                backgroundColor: "white",
-              }}
-            >
-              Auto sessions last 7 days: {autoSessionsLast7Days}
-            </div>
-
-            <div
-              style={{
-                padding: "6px 10px",
-                border: "1px solid #d1d5db",
-                borderRadius: 999,
-                fontSize: 12,
-                color: "#374151",
-                backgroundColor: "white",
-              }}
-            >
-              Auto last workout: {autoLastWorkout || "None"}
-            </div>
-          </div>
-
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 8,
+              color: theme.text,
+            }}
+          >
             <input
               type="checkbox"
               checked={overrideHistoryInputs}
@@ -247,36 +244,39 @@ export default function PlanToday() {
             Override autofilled history inputs
           </label>
 
-          <div style={{ display: "grid", gap: 12 }}>
-            <label>
-              <div style={{ marginBottom: 6 }}>Sessions in the last 7 days</div>
-              <input
-                type="number"
-                min={0}
-                max={14}
-                disabled={!overrideHistoryInputs}
-                value={sessionsLast7Days}
-                onChange={(e) => setSessionsLast7Days(Number(e.target.value))}
-              />
-            </label>
-
-            <label>
-              <div style={{ marginBottom: 6 }}>Last workout</div>
-              <input
-                type="text"
-                disabled={!overrideHistoryInputs}
-                placeholder="Examples: A, B, C, LOWER1, PUSH, LOWER2, PULL"
-                value={lastWorkout}
-                onChange={(e) => setLastWorkout(e.target.value.toUpperCase())}
-              />
-            </label>
+          <div style={smallMutedTextStyle(theme)}>
+            Auto: {autoSessionsLast7Days} session(s) in last 7 days · last workout{" "}
+            {autoLastWorkout || "none"}
           </div>
 
           {overrideHistoryInputs && (
-            <div style={{ marginTop: 12 }}>
-              <button type="button" onClick={resetOverridesToAuto}>
-                Reset to Autofill
-              </button>
+            <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+              <label>
+                <div style={{ marginBottom: 6, color: theme.textMuted }}>
+                  Sessions in the last 7 days
+                </div>
+                <input
+                  style={inputStyle(theme)}
+                  type="number"
+                  min={0}
+                  max={14}
+                  value={sessionsLast7Days}
+                  onChange={(e) => setSessionsLast7Days(Number(e.target.value))}
+                />
+              </label>
+
+              <label>
+                <div style={{ marginBottom: 6, color: theme.textMuted }}>
+                  Last workout
+                </div>
+                <input
+                  style={inputStyle(theme)}
+                  type="text"
+                  placeholder="Examples: A, B, C, LOWER1, PUSH, LOWER2, PULL"
+                  value={lastWorkout}
+                  onChange={(e) => setLastWorkout(e.target.value.toUpperCase())}
+                />
+              </label>
             </div>
           )}
         </div>
@@ -285,9 +285,9 @@ export default function PlanToday() {
           onClick={handlePlan}
           disabled={loading}
           style={{
-            width: 160,
-            padding: "10px 14px",
-            cursor: "pointer",
+            ...primaryButtonStyle(theme),
+            width: 180,
+            opacity: loading ? 0.7 : 1,
           }}
         >
           {loading ? "Loading..." : "Plan Today"}
@@ -297,13 +297,13 @@ export default function PlanToday() {
       {result && (
         <div
           style={{
+            ...cardStyle(theme),
             marginTop: 24,
-            padding: 16,
-            border: "1px solid #ccc",
-            borderRadius: 8,
+            padding: 20,
+            backgroundColor: theme.surface,
           }}
         >
-          <h2>Recommendation</h2>
+          <h2 style={{ marginTop: 0 }}>Recommendation</h2>
           <p>
             <strong>Mode:</strong> {result.mode}
           </p>
@@ -313,71 +313,108 @@ export default function PlanToday() {
           <p>
             <strong>Duration:</strong> {result.duration}
           </p>
-          <p>
+          <p style={{ color: theme.textMuted }}>
             <strong>Why:</strong> {result.reason}
           </p>
 
           {result.template ? (
             <div style={{ marginTop: 20 }}>
-              <h3>{result.template.title}</h3>
-              <p>
+              <h3 style={{ marginBottom: 8 }}>{result.template.title}</h3>
+              <p style={{ color: theme.textMuted }}>
                 <strong>Focus:</strong> {result.template.focus}
               </p>
 
-              <table
-                border={1}
-                cellPadding={8}
-                style={{ borderCollapse: "collapse", minWidth: 760, marginTop: 12 }}
+              <div
+                style={{
+                  overflowX: "auto",
+                  marginTop: 12,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: 12,
+                }}
               >
-                <thead>
-                  <tr>
-                    <th>Exercise</th>
-                    <th>Sets</th>
-                    <th>Reps</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.template.exercises.map((exercise, index) => (
-                    <tr key={`${exercise.exercise_name}-${index}`}>
-                      <td>
-                        <div>{exercise.exercise_name}</div>
-
-                        {exercise.was_rotated && (
-                          <div style={{ marginTop: 4 }}>
-                            <div style={getRotationBadgeStyle(exercise.rotation_reason)}>
-                              {getRotationBadgeLabel(exercise.rotation_reason)}
-                            </div>
-
-                            <div style={{ fontSize: 12, color: "#2563eb", marginTop: 4 }}>
-                              Rotated from slot: {exercise.accessory_slot}
-                            </div>
-
-                            {exercise.rotation_reason && (
-                              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-                                {exercise.rotation_reason}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td>{exercise.sets}</td>
-                      <td>{exercise.reps}</td>
-                      <td>{exercise.notes ?? ""}</td>
+                <table
+                  cellPadding={10}
+                  style={{
+                    borderCollapse: "collapse",
+                    minWidth: 760,
+                    width: "100%",
+                    backgroundColor: theme.surface,
+                  }}
+                >
+                  <thead>
+                    <tr>
+                      <th style={tableHeaderStyle(theme)}>Exercise</th>
+                      <th style={tableHeaderStyle(theme)}>Sets</th>
+                      <th style={tableHeaderStyle(theme)}>Reps</th>
+                      <th style={tableHeaderStyle(theme)}>Notes</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {result.template.exercises.map((exercise, index) => (
+                      <tr key={`${exercise.exercise_name}-${index}`}>
+                        <td style={tableCellStyle(theme)}>
+                          <div>{exercise.exercise_name}</div>
+
+                          {exercise.was_rotated && (
+                            <div style={{ marginTop: 4 }}>
+                              <div
+                                style={getRotationBadgeStyle(
+                                  theme,
+                                  exercise.rotation_reason
+                                )}
+                              >
+                                {getRotationBadgeLabel(
+                                  exercise.rotation_reason
+                                )}
+                              </div>
+
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  color: theme.accent,
+                                  marginTop: 4,
+                                }}
+                              >
+                                Rotated from slot: {exercise.accessory_slot}
+                              </div>
+
+                              {exercise.rotation_reason && (
+                                <div
+                                  style={{
+                                    fontSize: 12,
+                                    color: theme.textSoft,
+                                    marginTop: 4,
+                                  }}
+                                >
+                                  {exercise.rotation_reason}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td style={tableCellStyle(theme)}>{exercise.sets}</td>
+                        <td style={tableCellStyle(theme)}>{exercise.reps}</td>
+                        <td style={tableCellStyle(theme)}>
+                          {exercise.notes ?? ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
               <button
                 onClick={() => setStarted(true)}
-                style={{ marginTop: 16 }}
+                style={{
+                  ...primaryButtonStyle(theme),
+                  marginTop: 16,
+                }}
               >
                 Start Session
               </button>
             </div>
           ) : (
-            <p style={{ marginTop: 16 }}>
+            <p style={{ marginTop: 16, color: theme.textMuted }}>
               No template found in the database for this workout. Check Template
               Manager.
             </p>

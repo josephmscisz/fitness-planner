@@ -12,11 +12,25 @@ import {
   type WorkoutTemplateExerciseRecord,
   type WorkoutTemplateRecord,
 } from "../lib/db";
+import type { AppTheme } from "../theme";
+import {
+  cardStyle,
+  inputStyle,
+  pageStyle,
+  primaryButtonStyle,
+  secondaryButtonStyle,
+  smallMutedTextStyle,
+  tableCellStyle,
+  tableHeaderStyle,
+} from "../themeStyles";
 
-export default function TemplateManager() {
+export default function TemplateManager({ theme }: { theme: AppTheme }) {
   const [templates, setTemplates] = useState<WorkoutTemplateRecord[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<WorkoutTemplateRecord | null>(null);
-  const [templateExercises, setTemplateExercises] = useState<WorkoutTemplateExerciseRecord[]>([]);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<WorkoutTemplateRecord | null>(null);
+  const [templateExercises, setTemplateExercises] = useState<
+    WorkoutTemplateExerciseRecord[]
+  >([]);
   const [exerciseOptions, setExerciseOptions] = useState<ExerciseRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -72,7 +86,11 @@ export default function TemplateManager() {
       focus: templateFocus,
     });
 
-    const updated = { ...selectedTemplate, title: templateTitle, focus: templateFocus };
+    const updated = {
+      ...selectedTemplate,
+      title: templateTitle,
+      focus: templateFocus,
+    };
     setSelectedTemplate(updated);
     setTemplates((current) =>
       current.map((t) => (t.id === updated.id ? updated : t))
@@ -146,325 +164,447 @@ export default function TemplateManager() {
     setTemplateExercises(rows);
   }
 
-  if (loading) {
-    return <div style={{ padding: 24 }}>Loading templates...</div>;
-  }
-
   return (
-    <div style={{ padding: 24, fontFamily: "sans-serif", maxWidth: 1300, margin: "0 auto" }}>
-      <h1>Template Manager</h1>
+    <div style={pageStyle(theme)}>
+      <h1 style={{ marginBottom: 8 }}>Template Manager</h1>
+      <p style={smallMutedTextStyle(theme)}>
+        Edit workout templates, define fixed vs rotating slots, and shape how
+        your planner builds sessions.
+      </p>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "300px 1fr",
-          gap: 24,
-          alignItems: "start",
-        }}
-      >
+      {loading ? (
         <div
           style={{
-            border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            padding: 16,
-            backgroundColor: "#fafafa",
+            ...cardStyle(theme),
+            padding: 20,
+            marginTop: 20,
+            backgroundColor: theme.surface,
           }}
         >
-          <h3 style={{ marginTop: 0 }}>Templates</h3>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            {templates.map((template) => (
-              <button
-                key={template.id}
-                onClick={() => selectTemplate(template)}
-                style={{
-                  textAlign: "left",
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  border:
-                    selectedTemplate?.id === template.id
-                      ? "1px solid #93c5fd"
-                      : "1px solid #d1d5db",
-                  backgroundColor:
-                    selectedTemplate?.id === template.id ? "#eff6ff" : "white",
-                  cursor: "pointer",
-                }}
-              >
-                <div style={{ fontWeight: 600 }}>{template.title}</div>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>
-                  {template.mode} · {template.duration} · {template.code}
-                </div>
-              </button>
-            ))}
-          </div>
+          Loading templates...
         </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "320px 1fr",
+            gap: 24,
+            alignItems: "start",
+            marginTop: 20,
+          }}
+        >
+          <div
+            style={{
+              ...cardStyle(theme),
+              padding: 16,
+              backgroundColor: theme.surface,
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>Templates</h3>
 
-        <div>
-          {selectedTemplate ? (
-            <>
-              <div
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
-                  padding: 16,
-                  marginBottom: 20,
-                }}
-              >
-                <h3 style={{ marginTop: 0 }}>Template Details</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              {templates.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => selectTemplate(template)}
+                  style={{
+                    textAlign: "left",
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    border:
+                      selectedTemplate?.id === template.id
+                        ? `1px solid ${theme.borderStrong}`
+                        : `1px solid ${theme.border}`,
+                    backgroundColor:
+                      selectedTemplate?.id === template.id
+                        ? theme.surfaceElevated
+                        : theme.surfaceMuted,
+                    color: theme.text,
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>{template.title}</div>
+                  <div style={smallMutedTextStyle(theme)}>
+                    {template.mode} · {template.duration} · {template.code}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
 
-                <div style={{ display: "grid", gap: 12 }}>
-                  <input
-                    value={templateTitle}
-                    onChange={(e) => setTemplateTitle(e.target.value)}
-                    placeholder="Template title"
-                  />
-                  <input
-                    value={templateFocus}
-                    onChange={(e) => setTemplateFocus(e.target.value)}
-                    placeholder="Focus"
-                  />
+          <div style={{ display: "grid", gap: 20 }}>
+            {selectedTemplate ? (
+              <>
+                <div
+                  style={{
+                    ...cardStyle(theme),
+                    padding: 16,
+                    backgroundColor: theme.surface,
+                  }}
+                >
+                  <h3 style={{ marginTop: 0 }}>Template Details</h3>
+
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <input
+                      style={inputStyle(theme)}
+                      value={templateTitle}
+                      onChange={(e) => setTemplateTitle(e.target.value)}
+                      placeholder="Template title"
+                    />
+                    <input
+                      style={inputStyle(theme)}
+                      value={templateFocus}
+                      onChange={(e) => setTemplateFocus(e.target.value)}
+                      placeholder="Focus"
+                    />
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <button
+                      onClick={saveTemplateMeta}
+                      style={primaryButtonStyle(theme)}
+                    >
+                      Save Template Details
+                    </button>
+                  </div>
                 </div>
-
-                <div style={{ marginTop: 12 }}>
-                  <button onClick={saveTemplateMeta}>Save Template Details</button>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
-                  padding: 16,
-                  marginBottom: 20,
-                }}
-              >
-                <h3 style={{ marginTop: 0 }}>Add Exercise To Template</h3>
 
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "1.2fr 1.6fr 1fr 1fr 1.4fr 1.4fr auto",
-                    gap: 12,
-                    alignItems: "end",
+                    ...cardStyle(theme),
+                    padding: 16,
+                    backgroundColor: theme.surface,
                   }}
                 >
-                  <div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Slot Type</div>
-                    <select value={newSlotType} onChange={(e) => setNewSlotType(e.target.value)}>
-                      <option value="fixed_foundation">Fixed Foundation</option>
-                      <option value="fixed_accessory">Fixed Accessory</option>
-                      <option value="rotating_accessory">Rotating Accessory</option>
-                    </select>
+                  <h3 style={{ marginTop: 0 }}>Add Exercise To Template</h3>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "1.2fr 1.6fr 1fr 1fr 1.4fr 1.4fr auto",
+                      gap: 12,
+                      alignItems: "end",
+                    }}
+                  >
+                    <div>
+                      <div style={{ marginBottom: 4, color: theme.textSoft, fontSize: 12 }}>
+                        Slot Type
+                      </div>
+                      <select
+                        style={inputStyle(theme)}
+                        value={newSlotType}
+                        onChange={(e) => setNewSlotType(e.target.value)}
+                      >
+                        <option value="fixed_foundation">Fixed Foundation</option>
+                        <option value="fixed_accessory">Fixed Accessory</option>
+                        <option value="rotating_accessory">Rotating Accessory</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div style={{ marginBottom: 4, color: theme.textSoft, fontSize: 12 }}>
+                        Exercise
+                      </div>
+                      <select
+                        style={inputStyle(theme)}
+                        value={newExerciseName}
+                        onChange={(e) => setNewExerciseName(e.target.value)}
+                        disabled={newSlotType === "rotating_accessory"}
+                      >
+                        <option value="">Select exercise</option>
+                        {exerciseOptions.map((exercise) => (
+                          <option key={exercise.id} value={exercise.name}>
+                            {exercise.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div style={{ marginBottom: 4, color: theme.textSoft, fontSize: 12 }}>
+                        Sets
+                      </div>
+                      <input
+                        style={inputStyle(theme)}
+                        value={newSets}
+                        onChange={(e) => setNewSets(e.target.value)}
+                        placeholder="Sets"
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ marginBottom: 4, color: theme.textSoft, fontSize: 12 }}>
+                        Reps
+                      </div>
+                      <input
+                        style={inputStyle(theme)}
+                        value={newReps}
+                        onChange={(e) => setNewReps(e.target.value)}
+                        placeholder="Reps"
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ marginBottom: 4, color: theme.textSoft, fontSize: 12 }}>
+                        Accessory Slot
+                      </div>
+                      <input
+                        style={inputStyle(theme)}
+                        value={newAccessorySlot}
+                        onChange={(e) => setNewAccessorySlot(e.target.value)}
+                        placeholder="e.g. triceps, upper_back"
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ marginBottom: 4, color: theme.textSoft, fontSize: 12 }}>
+                        Equipment Filter
+                      </div>
+                      <input
+                        style={inputStyle(theme)}
+                        value={newAccessoryEquipment}
+                        onChange={(e) => setNewAccessoryEquipment(e.target.value)}
+                        placeholder="Optional equipment"
+                      />
+                    </div>
+
+                    <button onClick={addExerciseRow} style={primaryButtonStyle(theme)}>
+                      Add
+                    </button>
                   </div>
 
-                  <div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Exercise</div>
-                    <select
-                      value={newExerciseName}
-                      onChange={(e) => setNewExerciseName(e.target.value)}
-                      disabled={newSlotType === "rotating_accessory"}
+                  <div style={{ marginTop: 12 }}>
+                    <input
+                      style={inputStyle(theme)}
+                      value={newNotes}
+                      onChange={(e) => setNewNotes(e.target.value)}
+                      placeholder="Notes"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    ...cardStyle(theme),
+                    padding: 16,
+                    backgroundColor: theme.surface,
+                  }}
+                >
+                  <h3 style={{ marginTop: 0 }}>Template Exercises</h3>
+
+                  <div
+                    style={{
+                      overflowX: "auto",
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: 12,
+                    }}
+                  >
+                    <table
+                      cellPadding={10}
+                      style={{
+                        width: "100%",
+                        minWidth: 1300,
+                        borderCollapse: "collapse",
+                        backgroundColor: theme.surface,
+                      }}
                     >
-                      <option value="">Select exercise</option>
-                      {exerciseOptions.map((exercise) => (
-                        <option key={exercise.id} value={exercise.name}>
-                          {exercise.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                      <thead>
+                        <tr>
+                          <th style={tableHeaderStyle(theme)}>Order</th>
+                          <th style={tableHeaderStyle(theme)}>Slot Type</th>
+                          <th style={tableHeaderStyle(theme)}>Exercise</th>
+                          <th style={tableHeaderStyle(theme)}>Accessory Slot</th>
+                          <th style={tableHeaderStyle(theme)}>Equipment Filter</th>
+                          <th style={tableHeaderStyle(theme)}>Sets</th>
+                          <th style={tableHeaderStyle(theme)}>Reps</th>
+                          <th style={tableHeaderStyle(theme)}>Notes</th>
+                          <th style={tableHeaderStyle(theme)}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {templateExercises.map((row) => {
+                          const isRotating =
+                            row.slot_type === "rotating_accessory";
 
-                  <div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Sets</div>
-                    <input
-                      value={newSets}
-                      onChange={(e) => setNewSets(e.target.value)}
-                      placeholder="Sets"
-                    />
-                  </div>
+                          return (
+                            <tr key={row.id}>
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={row.sort_order}
+                                  onChange={(e) =>
+                                    updateTemplateExerciseField(
+                                      row.id,
+                                      "sort_order",
+                                      Number(e.target.value)
+                                    )
+                                  }
+                                />
+                              </td>
 
-                  <div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Reps</div>
-                    <input
-                      value={newReps}
-                      onChange={(e) => setNewReps(e.target.value)}
-                      placeholder="Reps"
-                    />
-                  </div>
+                              <td style={tableCellStyle(theme)}>
+                                <select
+                                  style={inputStyle(theme)}
+                                  value={row.slot_type ?? ""}
+                                  onChange={(e) =>
+                                    updateTemplateExerciseField(
+                                      row.id,
+                                      "slot_type",
+                                      e.target.value
+                                    )
+                                  }
+                                >
+                                  <option value="fixed_foundation">
+                                    Fixed Foundation
+                                  </option>
+                                  <option value="fixed_accessory">
+                                    Fixed Accessory
+                                  </option>
+                                  <option value="rotating_accessory">
+                                    Rotating Accessory
+                                  </option>
+                                </select>
+                              </td>
 
-                  <div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Accessory Slot</div>
-                    <input
-                      value={newAccessorySlot}
-                      onChange={(e) => setNewAccessorySlot(e.target.value)}
-                      placeholder="e.g. triceps, upper_back"
-                    />
-                  </div>
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={row.exercise_name}
+                                  disabled={isRotating}
+                                  placeholder={
+                                    isRotating
+                                      ? "Resolved at runtime"
+                                      : "Exercise name"
+                                  }
+                                  onChange={(e) =>
+                                    updateTemplateExerciseField(
+                                      row.id,
+                                      "exercise_name",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </td>
 
-                  <div>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Equipment Filter</div>
-                    <input
-                      value={newAccessoryEquipment}
-                      onChange={(e) => setNewAccessoryEquipment(e.target.value)}
-                      placeholder="Optional equipment"
-                    />
-                  </div>
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={row.accessory_slot ?? ""}
+                                  placeholder="e.g. triceps"
+                                  onChange={(e) =>
+                                    updateTemplateExerciseField(
+                                      row.id,
+                                      "accessory_slot",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </td>
 
-                  <button onClick={addExerciseRow}>Add</button>
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={row.accessory_equipment ?? ""}
+                                  placeholder="Optional equipment"
+                                  onChange={(e) =>
+                                    updateTemplateExerciseField(
+                                      row.id,
+                                      "accessory_equipment",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </td>
+
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={row.sets ?? ""}
+                                  onChange={(e) =>
+                                    updateTemplateExerciseField(
+                                      row.id,
+                                      "sets",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </td>
+
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={row.reps ?? ""}
+                                  onChange={(e) =>
+                                    updateTemplateExerciseField(
+                                      row.id,
+                                      "reps",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </td>
+
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={row.notes ?? ""}
+                                  onChange={(e) =>
+                                    updateTemplateExerciseField(
+                                      row.id,
+                                      "notes",
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              </td>
+
+                              <td style={tableCellStyle(theme)}>
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  <button
+                                    onClick={() => saveExerciseRow(row)}
+                                    style={{
+                                      ...primaryButtonStyle(theme),
+                                      padding: "8px 10px",
+                                      fontSize: 13,
+                                    }}
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={() => removeExerciseRow(row.id)}
+                                    style={{
+                                      ...secondaryButtonStyle(theme),
+                                      padding: "8px 10px",
+                                      fontSize: 13,
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-
-                <div style={{ marginTop: 12 }}>
-                  <input
-                    value={newNotes}
-                    onChange={(e) => setNewNotes(e.target.value)}
-                    placeholder="Notes"
-                    style={{ width: "100%" }}
-                  />
-                </div>
-              </div>
-
+              </>
+            ) : (
               <div
                 style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
+                  ...cardStyle(theme),
                   padding: 16,
+                  backgroundColor: theme.surface,
                 }}
               >
-                <h3 style={{ marginTop: 0 }}>Template Exercises</h3>
-
-                <table
-                  cellPadding={8}
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    border: "1px solid #e5e7eb",
-                  }}
-                >
-                  <thead>
-                    <tr style={{ backgroundColor: "#f8fafc" }}>
-                      <th style={{ textAlign: "left" }}>Order</th>
-                      <th style={{ textAlign: "left" }}>Slot Type</th>
-                      <th style={{ textAlign: "left" }}>Exercise</th>
-                      <th style={{ textAlign: "left" }}>Accessory Slot</th>
-                      <th style={{ textAlign: "left" }}>Equipment Filter</th>
-                      <th style={{ textAlign: "left" }}>Sets</th>
-                      <th style={{ textAlign: "left" }}>Reps</th>
-                      <th style={{ textAlign: "left" }}>Notes</th>
-                      <th style={{ textAlign: "left" }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {templateExercises.map((row) => {
-                      const isRotating = row.slot_type === "rotating_accessory";
-
-                      return (
-                        <tr key={row.id}>
-                          <td>
-                            <input
-                              value={row.sort_order}
-                              onChange={(e) =>
-                                updateTemplateExerciseField(
-                                  row.id,
-                                  "sort_order",
-                                  Number(e.target.value)
-                                )
-                              }
-                              style={{ width: 70 }}
-                            />
-                          </td>
-
-                          <td>
-                            <select
-                              value={row.slot_type ?? ""}
-                              onChange={(e) =>
-                                updateTemplateExerciseField(row.id, "slot_type", e.target.value)
-                              }
-                            >
-                              <option value="fixed_foundation">Fixed Foundation</option>
-                              <option value="fixed_accessory">Fixed Accessory</option>
-                              <option value="rotating_accessory">Rotating Accessory</option>
-                            </select>
-                          </td>
-
-                          <td>
-                            <input
-                              value={row.exercise_name}
-                              disabled={isRotating}
-                              placeholder={isRotating ? "Resolved at runtime" : "Exercise name"}
-                              onChange={(e) =>
-                                updateTemplateExerciseField(row.id, "exercise_name", e.target.value)
-                              }
-                            />
-                          </td>
-
-                          <td>
-                            <input
-                              value={row.accessory_slot ?? ""}
-                              placeholder="e.g. triceps"
-                              onChange={(e) =>
-                                updateTemplateExerciseField(row.id, "accessory_slot", e.target.value)
-                              }
-                            />
-                          </td>
-
-                          <td>
-                            <input
-                              value={row.accessory_equipment ?? ""}
-                              placeholder="Optional equipment"
-                              onChange={(e) =>
-                                updateTemplateExerciseField(
-                                  row.id,
-                                  "accessory_equipment",
-                                  e.target.value
-                                )
-                              }
-                            />
-                          </td>
-
-                          <td>
-                            <input
-                              value={row.sets ?? ""}
-                              onChange={(e) =>
-                                updateTemplateExerciseField(row.id, "sets", e.target.value)
-                              }
-                            />
-                          </td>
-
-                          <td>
-                            <input
-                              value={row.reps ?? ""}
-                              onChange={(e) =>
-                                updateTemplateExerciseField(row.id, "reps", e.target.value)
-                              }
-                            />
-                          </td>
-
-                          <td>
-                            <input
-                              value={row.notes ?? ""}
-                              onChange={(e) =>
-                                updateTemplateExerciseField(row.id, "notes", e.target.value)
-                              }
-                            />
-                          </td>
-
-                          <td>
-                            <div style={{ display: "flex", gap: 8 }}>
-                              <button onClick={() => saveExerciseRow(row)}>Save</button>
-                              <button onClick={() => removeExerciseRow(row.id)}>Delete</button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <p style={smallMutedTextStyle(theme)}>Select a template.</p>
               </div>
-            </>
-          ) : (
-            <p>Select a template.</p>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

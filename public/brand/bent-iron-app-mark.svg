@@ -1,0 +1,98 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Bent Iron app mark</title>
+  <desc id="desc">App-friendly anvil and weight plate mark with kintsugi-inspired gold seams.</desc>
+
+  <defs>
+    <radialGradient id="bgGrad" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(340 260) rotate(38) scale(980 860)">
+      <stop offset="0" stop-color="#2B3138"/>
+      <stop offset="1" stop-color="#12161A"/>
+    </radialGradient>
+
+    <linearGradient id="ringGold" x1="188" y1="140" x2="828" y2="886" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E1C27E"/>
+      <stop offset="0.55" stop-color="#B88939"/>
+      <stop offset="1" stop-color="#886227"/>
+    </linearGradient>
+
+    <radialGradient id="steelMain" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(512 438) rotate(44) scale(470 360)">
+      <stop offset="0" stop-color="#6D747D"/>
+      <stop offset="0.5" stop-color="#40474F"/>
+      <stop offset="1" stop-color="#1B1F25"/>
+    </radialGradient>
+
+    <radialGradient id="steelPlate" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(488 344) rotate(37) scale(270 220)">
+      <stop offset="0" stop-color="#858C95"/>
+      <stop offset="0.52" stop-color="#4A515A"/>
+      <stop offset="1" stop-color="#1C2026"/>
+    </radialGradient>
+
+    <linearGradient id="goldMain" x1="360" y1="296" x2="628" y2="724" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F1D694"/>
+      <stop offset="0.5" stop-color="#C59642"/>
+      <stop offset="1" stop-color="#8E672C"/>
+    </linearGradient>
+
+    <linearGradient id="goldHighlight" x1="392" y1="318" x2="590" y2="672" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE7A9"/>
+      <stop offset="1" stop-color="#E8BF6C" stop-opacity="0.2"/>
+    </linearGradient>
+
+    <filter id="drop" x="86" y="86" width="852" height="852" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="14"/>
+      <feGaussianBlur stdDeviation="12"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.02 0 0 0 0 0.03 0 0 0 0 0.04 0 0 0 0.55 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="220" fill="url(#bgGrad)"/>
+
+  <g filter="url(#drop)">
+    <circle cx="512" cy="512" r="330" stroke="url(#ringGold)" stroke-width="18" opacity="0.95"/>
+    <circle cx="512" cy="512" r="292" stroke="#D4B16B" stroke-width="4" opacity="0.6"/>
+
+    <!-- Anvil body -->
+    <path d="M270 600 L368 600 L408 706 L616 706 L656 600 L754 600 L720 760 L304 760 Z" fill="url(#steelMain)"/>
+    <path d="M292 420 L408 420 L430 520 L594 520 L616 420 L732 420 L682 560 L342 560 Z" fill="url(#steelMain)"/>
+    <path d="M228 490 L344 490 L322 560 L198 560 Z" fill="url(#steelMain)"/>
+    <path d="M796 490 L680 490 L702 560 L826 560 Z" fill="url(#steelMain)"/>
+
+    <!-- Plate -->
+    <circle cx="512" cy="430" r="182" fill="url(#steelPlate)"/>
+    <circle cx="512" cy="430" r="182" stroke="#8A929B" stroke-width="4" opacity="0.7"/>
+    <circle cx="512" cy="430" r="136" stroke="#7B848D" stroke-width="4" opacity="0.55"/>
+    <circle cx="512" cy="430" r="78" stroke="#69727B" stroke-width="3" opacity="0.45"/>
+    <circle cx="512" cy="430" r="40" fill="#0F1318"/>
+    <circle cx="512" cy="430" r="40" stroke="#4F5862" stroke-width="3"/>
+
+    <!-- Kintsugi network (optimized for small-size readability) -->
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M356 356 C396 388, 436 406, 476 430 C516 452, 560 470, 620 498" stroke="url(#goldMain)" stroke-width="12"/>
+      <path d="M512 430 C486 478, 472 526, 460 590" stroke="url(#goldMain)" stroke-width="10"/>
+      <path d="M512 430 C554 396, 598 360, 650 318" stroke="url(#goldMain)" stroke-width="8"/>
+      <path d="M448 412 C420 456, 392 504, 352 548" stroke="url(#goldMain)" stroke-width="7"/>
+      <path d="M586 466 C620 500, 656 526, 704 554" stroke="url(#goldMain)" stroke-width="6"/>
+
+      <path d="M408 392 C426 404, 442 416, 456 432" stroke="url(#goldMain)" stroke-width="3.5"/>
+      <path d="M470 522 C438 548, 414 574, 394 610" stroke="url(#goldMain)" stroke-width="3.4"/>
+      <path d="M604 372 C628 356, 648 338, 670 314" stroke="url(#goldMain)" stroke-width="3.2"/>
+      <path d="M656 526 C680 534, 700 546, 722 564" stroke="url(#goldMain)" stroke-width="3"/>
+
+      <path d="M356 356 C396 388, 436 406, 476 430 C516 452, 560 470, 620 498" stroke="url(#goldHighlight)" stroke-width="2.5" opacity="0.95"/>
+      <path d="M512 430 C486 478, 472 526, 460 590" stroke="url(#goldHighlight)" stroke-width="2.2" opacity="0.9"/>
+      <path d="M512 430 C554 396, 598 360, 650 318" stroke="url(#goldHighlight)" stroke-width="2" opacity="0.85"/>
+    </g>
+
+    <g fill="#C89B4C">
+      <circle cx="476" cy="430" r="5"/>
+      <circle cx="512" cy="430" r="5"/>
+      <circle cx="586" cy="466" r="4.5"/>
+      <circle cx="460" cy="590" r="4.5"/>
+      <circle cx="620" cy="498" r="4"/>
+    </g>
+  </g>
+</svg>
