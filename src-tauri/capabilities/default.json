@@ -11,8 +11,11 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
     "opener:default",
+    "sql:default",
     "sql:allow-load",
     "sql:allow-execute",
+    "dialog:default",
+    "fs:default",
     "sql:allow-select",
     "shell:allow-open"
   ]

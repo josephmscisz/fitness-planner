@@ -79,6 +79,35 @@ export async function initDb() {
     )
   `);
 
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS whoop_daily_metrics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      metric_date TEXT NOT NULL UNIQUE,
+      recovery_score INTEGER,
+      sleep_performance INTEGER,
+      sleep_duration_mins INTEGER,
+      hrv REAL,
+      resting_hr INTEGER,
+      raw_json TEXT,
+      synced_at TEXT NOT NULL
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS whoop_workouts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      whoop_workout_id TEXT NOT NULL UNIQUE,
+      start_time TEXT NOT NULL,
+      end_time TEXT,
+      sport_name TEXT,
+      strain REAL,
+      average_hr INTEGER,
+      max_hr INTEGER,
+      raw_json TEXT,
+      synced_at TEXT NOT NULL
+    )
+  `);
+
   // Exercise table migrations
   try {
     await db.execute(`ALTER TABLE exercises ADD COLUMN role_type TEXT`);
@@ -108,6 +137,154 @@ export async function initDb() {
   try {
     await db.execute(`ALTER TABLE workout_template_exercises ADD COLUMN accessory_equipment TEXT`);
   } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN selected_energy TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN whoop_recovery_score INTEGER`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN whoop_sleep_performance INTEGER`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN whoop_alignment_bucket TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN matched_whoop_workout_id TEXT`);
+  } catch {}
+
+  // Workout session snapshot fields
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN selected_energy TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN whoop_recovery_score INTEGER`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN whoop_sleep_performance INTEGER`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN whoop_alignment_bucket TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN matched_whoop_workout_id TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN selected_energy TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN whoop_recovery_score INTEGER`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN whoop_sleep_performance INTEGER`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN whoop_alignment_bucket TEXT`);
+  } catch {}
+
+  try {
+    await db.execute(`ALTER TABLE workout_sessions ADD COLUMN matched_whoop_workout_id TEXT`);
+  } catch {}
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS whoop_connections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_user_id TEXT,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT,
+      scope TEXT,
+      expires_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS whoop_daily_metrics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      metric_date TEXT NOT NULL UNIQUE,
+      recovery_score INTEGER,
+      sleep_performance INTEGER,
+      sleep_duration_mins INTEGER,
+      hrv REAL,
+      resting_hr INTEGER,
+      raw_json TEXT,
+      synced_at TEXT NOT NULL
+    )
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS whoop_workouts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      whoop_workout_id TEXT NOT NULL UNIQUE,
+      start_time TEXT NOT NULL,
+      end_time TEXT,
+      sport_name TEXT,
+      strain REAL,
+      average_hr INTEGER,
+      max_hr INTEGER,
+      raw_json TEXT,
+      synced_at TEXT NOT NULL
+    )
+  `);
+
+  // WHOOP connection/token storage
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS whoop_connections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_user_id TEXT,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT,
+      scope TEXT,
+      expires_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  // WHOOP daily readiness/sleep snapshot
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS whoop_daily_metrics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      metric_date TEXT NOT NULL UNIQUE,
+      recovery_score INTEGER,
+      sleep_performance INTEGER,
+      sleep_duration_mins INTEGER,
+      hrv REAL,
+      resting_hr INTEGER,
+      raw_json TEXT,
+      synced_at TEXT NOT NULL
+    )
+  `);
+
+  // WHOOP workouts
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS whoop_workouts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      whoop_workout_id TEXT NOT NULL UNIQUE,
+      start_time TEXT NOT NULL,
+      end_time TEXT,
+      sport_name TEXT,
+      strain REAL,
+      average_hr INTEGER,
+      max_hr INTEGER,
+      raw_json TEXT,
+      synced_at TEXT NOT NULL
+    )
+  `);
 
   const templateCountRows = await db.select<{ count: number }[]>(
     "SELECT COUNT(*) as count FROM workout_templates"
@@ -297,6 +474,11 @@ export type CreateSessionInput = {
   duration: string;
   title: string;
   reason: string;
+  selectedEnergy?: string;
+  whoopRecoveryScore?: number | null;
+  whoopSleepPerformance?: number | null;
+  whoopAlignmentBucket?: string | null;
+  matchedWhoopWorkoutId?: string | null;
 };
 
 export async function createWorkoutSession(input: CreateSessionInput): Promise<number> {
@@ -304,8 +486,20 @@ export async function createWorkoutSession(input: CreateSessionInput): Promise<n
 
   await db.execute(
     `INSERT INTO workout_sessions
-      (started_at, mode, workout_code, duration, title, reason)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+      (
+        started_at,
+        mode,
+        workout_code,
+        duration,
+        title,
+        reason,
+        selected_energy,
+        whoop_recovery_score,
+        whoop_sleep_performance,
+        whoop_alignment_bucket,
+        matched_whoop_workout_id
+      )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       new Date().toISOString(),
       input.mode,
@@ -313,6 +507,11 @@ export async function createWorkoutSession(input: CreateSessionInput): Promise<n
       input.duration,
       input.title,
       input.reason,
+      input.selectedEnergy ?? "",
+      input.whoopRecoveryScore ?? null,
+      input.whoopSleepPerformance ?? null,
+      input.whoopAlignmentBucket ?? "",
+      input.matchedWhoopWorkoutId ?? null,
     ]
   );
 
@@ -374,10 +573,17 @@ export type WorkoutSession = {
   duration: string;
   title: string;
   reason?: string | null;
+  selected_energy?: string | null;
+  whoop_recovery_score?: number | null;
+  whoop_sleep_performance?: number | null;
+  whoop_alignment_bucket?: string | null;
+  matched_whoop_workout_id?: string | null;
 };
 
 export async function getWorkoutSessions(): Promise<WorkoutSession[]> {
   const db = await getDb();
+
+  
 
   return db.select<WorkoutSession[]>(
     `SELECT *
@@ -1052,4 +1258,308 @@ export async function upsertImportedExercise(input: {
   });
 
   return { action: "created" as const };
+}
+
+export type WhoopDailyMetric = {
+  id: number;
+  metric_date: string;
+  recovery_score?: number | null;
+  sleep_performance?: number | null;
+  sleep_duration_mins?: number | null;
+  hrv?: number | null;
+  resting_hr?: number | null;
+  raw_json?: string | null;
+  synced_at: string;
+};
+
+export type WhoopWorkout = {
+  id: number;
+  whoop_workout_id: string;
+  start_time: string;
+  end_time?: string | null;
+  sport_name?: string | null;
+  strain?: number | null;
+  average_hr?: number | null;
+  max_hr?: number | null;
+  raw_json?: string | null;
+  synced_at: string;
+};
+
+export async function upsertWhoopDailyMetric(input: {
+  metricDate: string;
+  recoveryScore?: number | null;
+  sleepPerformance?: number | null;
+  sleepDurationMins?: number | null;
+  hrv?: number | null;
+  restingHr?: number | null;
+  rawJson?: string;
+}) {
+  const db = await getDb();
+
+  await db.execute(
+    `INSERT INTO whoop_daily_metrics
+      (metric_date, recovery_score, sleep_performance, sleep_duration_mins, hrv, resting_hr, raw_json, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(metric_date) DO UPDATE SET
+       recovery_score = excluded.recovery_score,
+       sleep_performance = excluded.sleep_performance,
+       sleep_duration_mins = excluded.sleep_duration_mins,
+       hrv = excluded.hrv,
+       resting_hr = excluded.resting_hr,
+       raw_json = excluded.raw_json,
+       synced_at = excluded.synced_at`,
+    [
+      input.metricDate,
+      input.recoveryScore ?? null,
+      input.sleepPerformance ?? null,
+      input.sleepDurationMins ?? null,
+      input.hrv ?? null,
+      input.restingHr ?? null,
+      input.rawJson ?? "",
+      new Date().toISOString(),
+    ]
+  );
+}
+
+export async function upsertWhoopWorkout(input: {
+  whoopWorkoutId: string;
+  startTime: string;
+  endTime?: string | null;
+  sportName?: string | null;
+  strain?: number | null;
+  averageHr?: number | null;
+  maxHr?: number | null;
+  rawJson?: string;
+}) {
+  const db = await getDb();
+
+  await db.execute(
+    `INSERT INTO whoop_workouts
+      (whoop_workout_id, start_time, end_time, sport_name, strain, average_hr, max_hr, raw_json, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(whoop_workout_id) DO UPDATE SET
+       start_time = excluded.start_time,
+       end_time = excluded.end_time,
+       sport_name = excluded.sport_name,
+       strain = excluded.strain,
+       average_hr = excluded.average_hr,
+       max_hr = excluded.max_hr,
+       raw_json = excluded.raw_json,
+       synced_at = excluded.synced_at`,
+    [
+      input.whoopWorkoutId,
+      input.startTime,
+      input.endTime ?? null,
+      input.sportName ?? null,
+      input.strain ?? null,
+      input.averageHr ?? null,
+      input.maxHr ?? null,
+      input.rawJson ?? "",
+      new Date().toISOString(),
+    ]
+  );
+}
+
+export async function getLatestWhoopDailyMetric(): Promise<WhoopDailyMetric | null> {
+  const db = await getDb();
+
+  const rows = await db.select<WhoopDailyMetric[]>(
+    `SELECT *
+     FROM whoop_daily_metrics
+     ORDER BY metric_date DESC
+     LIMIT 1`
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function getRecentWhoopWorkouts(limit: number = 10): Promise<WhoopWorkout[]> {
+  const db = await getDb();
+
+  return db.select<WhoopWorkout[]>(
+    `SELECT *
+     FROM whoop_workouts
+     ORDER BY start_time DESC
+     LIMIT ?`,
+    [limit]
+  );
+}
+
+export type WhoopConnection = {
+  id: number;
+  provider_user_id?: string | null;
+  access_token: string;
+  refresh_token?: string | null;
+  scope?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function saveWhoopConnection(input: {
+  providerUserId?: string;
+  accessToken: string;
+  refreshToken?: string;
+  scope?: string;
+  expiresAt?: string;
+}) {
+  const db = await getDb();
+
+  const existing = await db.select<{ id: number }[]>(
+    `SELECT id FROM whoop_connections ORDER BY id DESC LIMIT 1`
+  );
+
+  const now = new Date().toISOString();
+
+  if (existing[0]?.id) {
+    await db.execute(
+      `UPDATE whoop_connections
+       SET provider_user_id = ?, access_token = ?, refresh_token = ?, scope = ?, expires_at = ?, updated_at = ?
+       WHERE id = ?`,
+      [
+        input.providerUserId ?? null,
+        input.accessToken,
+        input.refreshToken ?? null,
+        input.scope ?? null,
+        input.expiresAt ?? null,
+        now,
+        existing[0].id,
+      ]
+    );
+    return existing[0].id;
+  }
+
+  await db.execute(
+    `INSERT INTO whoop_connections
+      (provider_user_id, access_token, refresh_token, scope, expires_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.providerUserId ?? null,
+      input.accessToken,
+      input.refreshToken ?? null,
+      input.scope ?? null,
+      input.expiresAt ?? null,
+      now,
+      now,
+    ]
+  );
+
+  const rows = await db.select<{ id: number }[]>(
+    `SELECT id FROM whoop_connections ORDER BY id DESC LIMIT 1`
+  );
+
+  return rows[0]?.id ?? null;
+}
+
+export async function getWhoopConnection(): Promise<WhoopConnection | null> {
+  const db = await getDb();
+
+  const rows = await db.select<WhoopConnection[]>(
+    `SELECT *
+     FROM whoop_connections
+     ORDER BY id DESC
+     LIMIT 1`
+  );
+
+  return rows[0] ?? null;
+}
+
+function recoveryToBucket(recoveryScore?: number | null): "low" | "medium" | "high" | null {
+  if (recoveryScore == null) return null;
+  if (recoveryScore < 34) return "low";
+  if (recoveryScore < 67) return "medium";
+  return "high";
+}
+
+export async function computeWhoopAlignment30d(): Promise<{
+  percent: number | null;
+  matchedDays: number;
+  totalDays: number;
+  latestBucket: "low" | "medium" | "high" | null;
+}> {
+  const db = await getDb();
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const rows = await db.select<
+    Array<{
+      selected_energy?: string | null;
+      whoop_recovery_score?: number | null;
+    }>
+  >(
+    `SELECT selected_energy, whoop_recovery_score
+     FROM workout_sessions
+     WHERE started_at >= ?
+       AND selected_energy IS NOT NULL
+       AND selected_energy != ''
+       AND whoop_recovery_score IS NOT NULL`,
+    [thirtyDaysAgo.toISOString()]
+  );
+
+  let matchedDays = 0;
+  let totalDays = 0;
+
+  for (const row of rows) {
+    const energy = (row.selected_energy ?? "").toLowerCase();
+    const bucket = recoveryToBucket(row.whoop_recovery_score);
+
+    if (!bucket) continue;
+    if (!["low", "medium", "high"].includes(energy)) continue;
+
+    totalDays += 1;
+    if (energy === bucket) {
+      matchedDays += 1;
+    }
+  }
+
+  const latest = await getLatestWhoopDailyMetric();
+  const latestBucket = recoveryToBucket(latest?.recovery_score ?? null);
+
+  return {
+    percent: totalDays > 0 ? Math.round((matchedDays / totalDays) * 100) : null,
+    matchedDays,
+    totalDays,
+    latestBucket,
+  };
+}
+
+export async function matchWhoopWorkoutToSession(
+  sessionStartedAt: string,
+  windowHours: number = 4
+): Promise<string | null> {
+  const workouts = await getRecentWhoopWorkouts(50);
+
+  const sessionTs = new Date(sessionStartedAt).getTime();
+  const maxDiffMs = windowHours * 60 * 60 * 1000;
+
+  let bestId: string | null = null;
+  let bestDiff = Number.POSITIVE_INFINITY;
+
+  for (const workout of workouts) {
+    const workoutTs = new Date(workout.start_time).getTime();
+    const diff = Math.abs(sessionTs - workoutTs);
+    if (diff <= maxDiffMs && diff < bestDiff) {
+      bestDiff = diff;
+      bestId = workout.whoop_workout_id;
+    }
+  }
+
+  return bestId;
+}
+
+export async function getWhoopWorkoutById(
+  whoopWorkoutId: string
+): Promise<WhoopWorkout | null> {
+  const db = await getDb();
+
+  const rows = await db.select<WhoopWorkout[]>(
+    `SELECT *
+     FROM whoop_workouts
+     WHERE whoop_workout_id = ?
+     LIMIT 1`,
+    [whoopWorkoutId]
+  );
+
+  return rows[0] ?? null;
 }

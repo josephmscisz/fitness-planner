@@ -8,6 +8,7 @@ import {
   getExercisesFiltered,
   getLastExerciseLog,
   insertExerciseLog,
+  matchWhoopWorkoutToSession,
   type ExerciseRecord,
 } from "../lib/db";
 import { getProgressionDecision } from "../planner/progression";
@@ -28,6 +29,9 @@ type Props = {
   plan: PlanResult;
   onDone: () => void;
   theme: AppTheme;
+  whoopRecovery: number | null;
+  whoopSleepPerformance: number | null;
+  whoopAlignmentBucket: "low" | "medium" | "high" | null;
 };
 
 type ExerciseStatus = "completed" | "partial" | "skipped";
@@ -63,29 +67,13 @@ function getBadgeStyle(theme: AppTheme, outcome: ExerciseForm["progressionOutcom
 
   switch (outcome) {
     case "increase":
-      return {
-        ...base,
-        backgroundColor: theme.successBg,
-        color: theme.successText,
-      };
+      return { ...base, backgroundColor: theme.successBg, color: theme.successText };
     case "hold":
-      return {
-        ...base,
-        backgroundColor: theme.warningBg,
-        color: theme.warningText,
-      };
+      return { ...base, backgroundColor: theme.warningBg, color: theme.warningText };
     case "decrease":
-      return {
-        ...base,
-        backgroundColor: theme.dangerBg,
-        color: theme.dangerText,
-      };
+      return { ...base, backgroundColor: theme.dangerBg, color: theme.dangerText };
     default:
-      return {
-        ...base,
-        backgroundColor: theme.surfaceElevated,
-        color: theme.textMuted,
-      };
+      return { ...base, backgroundColor: theme.surfaceElevated, color: theme.textMuted };
   }
 }
 
@@ -152,8 +140,7 @@ function StatusToggle({
         onClick={() => onChange("completed")}
         style={{
           ...buttonBase,
-          backgroundColor:
-            status === "completed" ? theme.successBg : theme.surfaceElevated,
+          backgroundColor: status === "completed" ? theme.successBg : theme.surfaceElevated,
           color: status === "completed" ? theme.successText : theme.text,
         }}
       >
@@ -165,8 +152,7 @@ function StatusToggle({
         onClick={() => onChange("partial")}
         style={{
           ...buttonBase,
-          backgroundColor:
-            status === "partial" ? theme.accentSoft : theme.surfaceElevated,
+          backgroundColor: status === "partial" ? theme.accentSoft : theme.surfaceElevated,
           color: status === "partial" ? theme.accent : theme.text,
         }}
       >
@@ -178,8 +164,7 @@ function StatusToggle({
         onClick={() => onChange("skipped")}
         style={{
           ...buttonBase,
-          backgroundColor:
-            status === "skipped" ? theme.dangerBg : theme.surfaceElevated,
+          backgroundColor: status === "skipped" ? theme.dangerBg : theme.surfaceElevated,
           color: status === "skipped" ? theme.dangerText : theme.text,
         }}
       >
@@ -189,7 +174,14 @@ function StatusToggle({
   );
 }
 
-export default function SessionLogger({ plan, onDone, theme }: Props) {
+export default function SessionLogger({
+  plan,
+  onDone,
+  theme,
+  whoopRecovery,
+  whoopSleepPerformance,
+  whoopAlignmentBucket,
+}: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -325,18 +317,24 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
       setSaving(true);
       setError(null);
 
+      const startedAt = new Date().toISOString();
+      const matchedWhoopWorkoutId = await matchWhoopWorkoutToSession(startedAt, 4);
+
       const sessionId = await createWorkoutSession({
         mode: plan.mode,
         workoutCode: plan.workoutCode,
         duration: plan.duration,
         title: plan.template.title,
         reason: plan.reason,
+        selectedEnergy: plan.selectedEnergy ?? "",
+        whoopRecoveryScore: whoopRecovery,
+        whoopSleepPerformance: whoopSleepPerformance,
+        whoopAlignmentBucket: whoopAlignmentBucket,
+        matchedWhoopWorkoutId,
       });
 
       for (const entry of entries) {
-        if (entry.status === "skipped") {
-          continue;
-        }
+        if (entry.status === "skipped") continue;
 
         const statusNote =
           entry.status === "partial"
@@ -400,39 +398,64 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
     <div style={pageStyle(theme)}>
       <h1 style={{ marginBottom: 8 }}>Log Session</h1>
 
-      <div
-        style={{
-          ...cardStyle(theme),
-          marginBottom: 20,
-          padding: 16,
-          backgroundColor: theme.surface,
-        }}
-      >
+      <div style={{ ...cardStyle(theme), marginBottom: 20, padding: 16, backgroundColor: theme.surface }}>
         <p style={{ margin: "0 0 6px 0" }}>
           <strong>{plan.template?.title}</strong>
         </p>
         <p style={{ margin: 0, color: theme.textMuted }}>{plan.reason}</p>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            marginTop: 12,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: theme.surfaceElevated,
+              border: `1px solid ${theme.border}`,
+              borderRadius: 10,
+              padding: "8px 10px",
+              fontSize: 12,
+            }}
+          >
+            Energy: <strong>{plan.selectedEnergy ?? "—"}</strong>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: theme.surfaceElevated,
+              border: `1px solid ${theme.border}`,
+              borderRadius: 10,
+              padding: "8px 10px",
+              fontSize: 12,
+            }}
+          >
+            WHOOP Recovery: <strong>{whoopRecovery ?? "—"}</strong>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: theme.surfaceElevated,
+              border: `1px solid ${theme.border}`,
+              borderRadius: 10,
+              padding: "8px 10px",
+              fontSize: 12,
+            }}
+          >
+            WHOOP Sleep: <strong>{whoopSleepPerformance != null ? `${whoopSleepPerformance}%` : "—"}</strong>
+          </div>
+        </div>
       </div>
 
       {error && <p style={{ color: theme.dangerText, marginBottom: 12 }}>{error}</p>}
       {saved && <p style={{ color: theme.successText, marginBottom: 12 }}>Session saved successfully.</p>}
 
       {!isCompact ? (
-        <div
-          style={{
-            ...cardStyle(theme),
-            overflowX: "auto",
-            backgroundColor: theme.surface,
-          }}
-        >
-          <table
-            cellPadding={10}
-            style={{
-              borderCollapse: "collapse",
-              width: "100%",
-              minWidth: 1500,
-            }}
-          >
+        <div style={{ ...cardStyle(theme), overflowX: "auto", backgroundColor: theme.surface }}>
+          <table cellPadding={10} style={{ borderCollapse: "collapse", width: "100%", minWidth: 1500 }}>
             <thead>
               <tr>
                 <th style={tableHeaderStyle(theme)}>Exercise</th>
@@ -465,9 +488,7 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
                         : theme.surface,
                     }}
                   >
-                    <td style={tableCellStyle(theme)}>
-                      <strong>{entry.exerciseName}</strong>
-                    </td>
+                    <td style={tableCellStyle(theme)}><strong>{entry.exerciseName}</strong></td>
 
                     <td style={tableCellStyle(theme)}>
                       {entry.tutorialUrl ? (
@@ -480,11 +501,7 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
                               console.error("TUTORIAL OPEN ERROR:", err);
                             }
                           }}
-                          style={{
-                            ...secondaryButtonStyle(theme),
-                            padding: "6px 10px",
-                            fontSize: 14,
-                          }}
+                          style={{ ...secondaryButtonStyle(theme), padding: "6px 10px", fontSize: 14 }}
                           title="Open tutorial"
                         >
                           📺
@@ -495,11 +512,7 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
                     </td>
 
                     <td style={tableCellStyle(theme)}>
-                      <StatusToggle
-                        status={entry.status}
-                        onChange={(status) => updateStatus(index, status)}
-                        theme={theme}
-                      />
+                      <StatusToggle status={entry.status} onChange={(status) => updateStatus(index, status)} theme={theme} />
                     </td>
 
                     <td style={tableCellStyle(theme)}>
@@ -547,7 +560,6 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
                     </td>
 
                     <td style={tableCellStyle(theme)}>{renderLastSession(entry)}</td>
-
                     <td style={tableCellStyle(theme)}>{renderProgression(entry)}</td>
                   </tr>
                 );
@@ -584,9 +596,7 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
                       gap: 12,
                     }}
                   >
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>
-                      {entry.exerciseName}
-                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 16 }}>{entry.exerciseName}</div>
 
                     {entry.tutorialUrl && (
                       <button
@@ -598,11 +608,7 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
                             console.error("TUTORIAL OPEN ERROR:", err);
                           }
                         }}
-                        style={{
-                          ...secondaryButtonStyle(theme),
-                          padding: "6px 10px",
-                          fontSize: 14,
-                        }}
+                        style={{ ...secondaryButtonStyle(theme), padding: "6px 10px", fontSize: 14 }}
                         title="Open tutorial"
                       >
                         📺
@@ -617,17 +623,11 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
 
                 <div style={{ marginBottom: 12 }}>
                   <Field label="Status" theme={theme}>
-                    <StatusToggle
-                      status={entry.status}
-                      onChange={(status) => updateStatus(index, status)}
-                      theme={theme}
-                    />
+                    <StatusToggle status={entry.status} onChange={(status) => updateStatus(index, status)} theme={theme} />
                   </Field>
                 </div>
 
-                <div style={{ marginBottom: 12 }}>
-                  {renderProgression(entry)}
-                </div>
+                <div style={{ marginBottom: 12 }}>{renderProgression(entry)}</div>
 
                 <div
                   style={{
@@ -677,13 +677,7 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
                   </Field>
                 </div>
 
-                <div
-                  style={{
-                    marginTop: 8,
-                    paddingTop: 12,
-                    borderTop: `1px solid ${theme.border}`,
-                  }}
-                >
+                <div style={{ marginTop: 8, paddingTop: 12, borderTop: `1px solid ${theme.border}` }}>
                   <div style={{ ...labelStyle(theme), marginBottom: 6 }}>Last Session</div>
                   {renderLastSession(entry)}
                 </div>
@@ -694,24 +688,13 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
       )}
 
       <div style={{ marginTop: 20 }}>
-        <button
-          type="button"
-          onClick={() => setShowAddExercise((v) => !v)}
-          style={secondaryButtonStyle(theme)}
-        >
+        <button type="button" onClick={() => setShowAddExercise((v) => !v)} style={secondaryButtonStyle(theme)}>
           {showAddExercise ? "Close Add Exercise" : "Add Exercise"}
         </button>
       </div>
 
       {showAddExercise && (
-        <div
-          style={{
-            ...cardStyle(theme),
-            marginTop: 16,
-            padding: 16,
-            backgroundColor: theme.surface,
-          }}
-        >
+        <div style={{ ...cardStyle(theme), marginTop: 16, padding: 16, backgroundColor: theme.surface }}>
           <h3 style={{ marginTop: 0 }}>Add Exercise</h3>
 
           <div
@@ -735,11 +718,7 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
 
             <div>
               <div style={labelStyle(theme)}>Category</div>
-              <select
-                style={inputStyle(theme)}
-                value={exerciseCategory}
-                onChange={(e) => setExerciseCategory(e.target.value)}
-              >
+              <select style={inputStyle(theme)} value={exerciseCategory} onChange={(e) => setExerciseCategory(e.target.value)}>
                 <option value="">All</option>
                 {availableCategories.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -749,11 +728,7 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
 
             <div>
               <div style={labelStyle(theme)}>Equipment</div>
-              <select
-                style={inputStyle(theme)}
-                value={exerciseEquipment}
-                onChange={(e) => setExerciseEquipment(e.target.value)}
-              >
+              <select style={inputStyle(theme)} value={exerciseEquipment} onChange={(e) => setExerciseEquipment(e.target.value)}>
                 <option value="">All</option>
                 {availableEquipment.map((e) => (
                   <option key={e} value={e}>{e}</option>
@@ -788,110 +763,48 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => addExerciseToSession(exercise)}
-                    style={secondaryButtonStyle(theme)}
-                  >
+                  <button type="button" onClick={() => addExerciseToSession(exercise)} style={secondaryButtonStyle(theme)}>
                     Add
                   </button>
                 </div>
               ))}
             </div>
           ) : (
-            <div style={smallMutedTextStyle(theme)}>
-              Run a search to choose an exercise.
-            </div>
+            <div style={smallMutedTextStyle(theme)}>Run a search to choose an exercise.</div>
           )}
         </div>
       )}
 
-      <div
-        style={{
-          ...cardStyle(theme),
-          marginTop: 20,
-          padding: 16,
-          backgroundColor: theme.surface,
-        }}
-      >
+      <div style={{ ...cardStyle(theme), marginTop: 20, padding: 16, backgroundColor: theme.surface }}>
         <div style={{ fontWeight: 700, marginBottom: 10 }}>Session Summary</div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-            marginBottom: 10,
-          }}
-        >
-          <div
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              backgroundColor: theme.successBg,
-              color: theme.successText,
-              border: `1px solid ${theme.borderStrong}`,
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+          <div style={{ padding: "6px 10px", borderRadius: 999, backgroundColor: theme.successBg, color: theme.successText, border: `1px solid ${theme.borderStrong}`, fontSize: 12, fontWeight: 600 }}>
             Completed: {completedCount}
           </div>
 
-          <div
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              backgroundColor: theme.accentSoft,
-              color: theme.accent,
-              border: `1px solid ${theme.borderStrong}`,
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
+          <div style={{ padding: "6px 10px", borderRadius: 999, backgroundColor: theme.accentSoft, color: theme.accent, border: `1px solid ${theme.borderStrong}`, fontSize: 12, fontWeight: 600 }}>
             Partial: {partialCount}
           </div>
 
-          <div
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              backgroundColor: theme.dangerBg,
-              color: theme.dangerText,
-              border: `1px solid ${theme.borderStrong}`,
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
+          <div style={{ padding: "6px 10px", borderRadius: 999, backgroundColor: theme.dangerBg, color: theme.dangerText, border: `1px solid ${theme.borderStrong}`, fontSize: 12, fontWeight: 600 }}>
             Skipped: {skippedCount}
           </div>
 
-          <div
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              backgroundColor: theme.surfaceElevated,
-              color: theme.textMuted,
-              border: `1px solid ${theme.borderStrong}`,
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
+          <div style={{ padding: "6px 10px", borderRadius: 999, backgroundColor: theme.surfaceElevated, color: theme.textMuted, border: `1px solid ${theme.borderStrong}`, fontSize: 12, fontWeight: 600 }}>
             Total Planned: {totalCount}
           </div>
         </div>
 
         {skippedCount === totalCount && totalCount > 0 && (
           <div style={{ fontSize: 12, color: theme.dangerText }}>
-            Everything is marked skipped. Saving is disabled until at least one
-            exercise is completed or partial.
+            Everything is marked skipped. Saving is disabled until at least one exercise is completed or partial.
           </div>
         )}
 
         {partialCount > 0 && (
           <div style={{ fontSize: 12, color: theme.accent }}>
-            Partial exercises will be saved with a partial note so you can
-            review them later.
+            Partial exercises will be saved with a partial note so you can review them later.
           </div>
         )}
       </div>
@@ -908,10 +821,7 @@ export default function SessionLogger({ plan, onDone, theme }: Props) {
           {saving ? "Saving..." : "Save Session"}
         </button>
 
-        <button
-          onClick={onDone}
-          style={secondaryButtonStyle(theme)}
-        >
+        <button onClick={onDone} style={secondaryButtonStyle(theme)}>
           Back to Planner
         </button>
       </div>

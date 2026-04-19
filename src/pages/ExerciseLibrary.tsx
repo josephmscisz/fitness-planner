@@ -4,11 +4,16 @@ import {
   initDb,
   type Exercise,
 } from "../lib/db";
+import {
+  exportDatabaseBackup,
+  getDatabaseAbsolutePath,
+} from "../lib/databaseMaintenance";
 import type { AppTheme } from "../theme";
 import {
   cardStyle,
   inputStyle,
   pageStyle,
+  primaryButtonStyle,
   smallMutedTextStyle,
   tableCellStyle,
   tableHeaderStyle,
@@ -18,6 +23,9 @@ export default function ExerciseLibrary({ theme }: { theme: AppTheme }) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [filtered, setFiltered] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dbPath, setDbPath] = useState("");
+  const [backupMessage, setBackupMessage] = useState("");
+  const [backingUp, setBackingUp] = useState(false);
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -26,6 +34,7 @@ export default function ExerciseLibrary({ theme }: { theme: AppTheme }) {
 
   useEffect(() => {
     loadExercises();
+    loadDbPath();
   }, []);
 
   useEffect(() => {
@@ -38,6 +47,33 @@ export default function ExerciseLibrary({ theme }: { theme: AppTheme }) {
     const rows = await getExercises();
     setExercises(rows);
     setLoading(false);
+  }
+
+  async function loadDbPath() {
+    const path = await getDatabaseAbsolutePath();
+    setDbPath(path);
+  }
+
+  async function handleBackupExport() {
+    try {
+      setBackingUp(true);
+      setBackupMessage("");
+
+      const exportedTo = await exportDatabaseBackup();
+
+      if (!exportedTo) {
+        setBackupMessage("Backup export canceled.");
+        return;
+      }
+
+      setBackupMessage(`Backup exported to: ${exportedTo}`);
+    } catch (err) {
+      setBackupMessage(
+        `Backup failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setBackingUp(false);
+    }
   }
 
   function applyFilters() {
@@ -72,17 +108,17 @@ export default function ExerciseLibrary({ theme }: { theme: AppTheme }) {
     setFiltered(next);
   }
 
-const categories = [...new Set(
-  exercises
-    .map((e) => e.category)
-    .filter((value): value is string => typeof value === "string" && value.length > 0)
-)].sort();
+  const categories = [...new Set(
+    exercises
+      .map((e) => e.category)
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+  )].sort();
 
-const equipmentOptions = [...new Set(
-  exercises
-    .map((e) => e.equipment)
-    .filter((value): value is string => typeof value === "string" && value.length > 0)
-)].sort();
+  const equipmentOptions = [...new Set(
+    exercises
+      .map((e) => e.equipment)
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+  )].sort();
 
   return (
     <div style={pageStyle(theme)}>
@@ -90,6 +126,57 @@ const equipmentOptions = [...new Set(
       <p style={smallMutedTextStyle(theme)}>
         Browse your exercise database, including role, slot, equipment, and tutorial links.
       </p>
+
+      <div
+        style={{
+          ...cardStyle(theme),
+          padding: 16,
+          marginTop: 20,
+          backgroundColor: theme.surface,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ minWidth: 280 }}>
+            <div style={{ ...smallMutedTextStyle(theme), marginBottom: 4 }}>
+              Local database
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: theme.textMuted,
+                wordBreak: "break-all",
+              }}
+            >
+              {dbPath || "Loading database path..."}
+            </div>
+          </div>
+
+          <button
+            onClick={handleBackupExport}
+            disabled={backingUp}
+            style={{
+              ...primaryButtonStyle(theme),
+              opacity: backingUp ? 0.7 : 1,
+            }}
+          >
+            {backingUp ? "Exporting..." : "Export DB Backup"}
+          </button>
+        </div>
+
+        {backupMessage && (
+          <div style={{ marginTop: 10, color: theme.textMuted, fontSize: 13 }}>
+            {backupMessage}
+          </div>
+        )}
+      </div>
 
       <div
         style={{

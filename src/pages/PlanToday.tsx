@@ -6,10 +6,16 @@ import {
   type PlanResult,
 } from "../planner/planToday";
 import {
+  computeWhoopAlignment30d,
+  getLatestWhoopDailyMetric,
   getMostRecentWorkoutCode,
   getSessionsLast7DaysCount,
+  getWhoopConnection,
   getWorkoutTemplateByCodeAndDuration,
   initDb,
+  saveWhoopConnection,
+  upsertWhoopDailyMetric,
+  upsertWhoopWorkout,
 } from "../lib/db";
 import type { AppTheme } from "../theme";
 import {
@@ -22,6 +28,8 @@ import {
   tableHeaderStyle,
 } from "../themeStyles";
 import SessionLogger from "./SessionLogger";
+import { open } from "@tauri-apps/plugin-shell";
+import { getWhoopConnectUrl, syncWhoopFromBackend } from "../lib/whoopClient";
 
 function getRotationBadgeStyle(theme: AppTheme, reason?: string) {
   const text = (reason ?? "").toLowerCase();
@@ -88,6 +96,15 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const [whoopConnected, setWhoopConnected] = useState(false);
+  const [whoopRecovery, setWhoopRecovery] = useState<number | null>(null);
+  const [whoopSleepPerformance, setWhoopSleepPerformance] = useState<number | null>(null);
+  const [whoopAlignmentPercent, setWhoopAlignmentPercent] = useState<number | null>(null);
+  const [whoopAlignmentBucket, setWhoopAlignmentBucket] = useState<"low" | "medium" | "high" | null>(null);
+  const [syncingWhoop, setSyncingWhoop] = useState(false);
+  const [whoopSyncMessage, setWhoopSyncMessage] = useState("");
+  const [whoopSyncError, setWhoopSyncError] = useState("");
+
   useEffect(() => {
     async function loadPlannerDefaults() {
       await initDb();
@@ -102,6 +119,8 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
 
       setSessionsLast7Days(sessionCount);
       setLastWorkout(recentWorkoutCode);
+
+      await loadWhoopStatus();
     }
 
     loadPlannerDefaults();
@@ -139,12 +158,101 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
     }
   }
 
+  async function loadWhoopStatus() {
+    const [connection, latestMetric, alignment] = await Promise.all([
+      getWhoopConnection(),
+      getLatestWhoopDailyMetric(),
+      computeWhoopAlignment30d(),
+    ]);
+
+    setWhoopConnected(!!connection);
+    setWhoopRecovery(latestMetric?.recovery_score ?? null);
+    setWhoopSleepPerformance(latestMetric?.sleep_performance ?? null);
+    setWhoopAlignmentPercent(alignment.percent);
+    setWhoopAlignmentBucket(alignment.latestBucket);
+  }
+
+  async function handleConnectWhoop() {
+    try {
+      await open(getWhoopConnectUrl());
+    } catch (err) {
+      console.error("WHOOP CONNECT ERROR:", err);
+    }
+  }
+
+  async function handleSyncWhoop() {
+    try {
+      setSyncingWhoop(true);
+      setWhoopSyncMessage("");
+      setWhoopSyncError("");
+
+      const payload = await syncWhoopFromBackend();
+
+      if (!payload.connected) {
+        throw new Error(payload.error || "WHOOP is not connected.");
+      }
+
+      if (payload.connection) {
+        await saveWhoopConnection({
+          providerUserId: payload.connection.providerUserId ?? undefined,
+          accessToken: "__backend_managed__",
+          refreshToken: "__backend_managed__",
+          scope: payload.connection.scope ?? undefined,
+          expiresAt: payload.connection.expiresAt ?? undefined,
+        });
+      }
+
+      if (payload.latestMetric) {
+        await upsertWhoopDailyMetric({
+          metricDate: payload.latestMetric.metricDate,
+          recoveryScore: payload.latestMetric.recoveryScore ?? null,
+          sleepPerformance: payload.latestMetric.sleepPerformance ?? null,
+          sleepDurationMins: payload.latestMetric.sleepDurationMins ?? null,
+          hrv: payload.latestMetric.hrv ?? null,
+          restingHr: payload.latestMetric.restingHr ?? null,
+          rawJson: payload.latestMetric.rawJson ?? "",
+        });
+      }
+
+      for (const workout of payload.workouts ?? []) {
+        if (!workout.whoopWorkoutId || !workout.startTime) continue;
+
+        await upsertWhoopWorkout({
+          whoopWorkoutId: workout.whoopWorkoutId,
+          startTime: workout.startTime,
+          endTime: workout.endTime ?? null,
+          sportName: workout.sportName ?? null,
+          strain: workout.strain ?? null,
+          averageHr: workout.averageHr ?? null,
+          maxHr: workout.maxHr ?? null,
+          rawJson: workout.rawJson ?? "",
+        });
+      }
+
+      await loadWhoopStatus();
+
+      setWhoopSyncMessage(
+        `WHOOP sync complete.${payload.latestMetric ? " Latest recovery/sleep loaded." : ""}${
+          payload.workouts?.length ? ` Workouts imported: ${payload.workouts.length}.` : ""
+        }`
+      );
+    } catch (err) {
+      console.error("WHOOP SYNC ERROR:", err);
+      setWhoopSyncError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSyncingWhoop(false);
+    }
+  }
+
   if (started && result) {
     return (
       <SessionLogger
         plan={result}
         onDone={() => setStarted(false)}
         theme={theme}
+        whoopRecovery={whoopRecovery}
+        whoopSleepPerformance={whoopSleepPerformance}
+        whoopAlignmentBucket={whoopAlignmentBucket}
       />
     );
   }
@@ -279,6 +387,141 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
               </label>
             </div>
           )}
+        </div>
+
+        <div
+          style={{
+            backgroundColor: theme.surfaceMuted,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 12,
+            padding: 14,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+              marginBottom: 8,
+            }}
+          >
+            <div style={{ fontWeight: 600 }}>WHOOP Status</div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              {!whoopConnected && (
+                <button
+                  type="button"
+                  onClick={handleConnectWhoop}
+                  style={{
+                    ...primaryButtonStyle(theme),
+                    padding: "8px 12px",
+                  }}
+                >
+                  Connect WHOOP
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleSyncWhoop}
+                disabled={syncingWhoop}
+                style={{
+                  ...primaryButtonStyle(theme),
+                  padding: "8px 12px",
+                  opacity: syncingWhoop ? 0.7 : 1,
+                }}
+              >
+                {syncingWhoop ? "Syncing..." : "Sync WHOOP"}
+              </button>
+            </div>
+          </div>
+
+          <div style={smallMutedTextStyle(theme)}>
+            {whoopConnected
+              ? "WHOOP connected"
+              : "WHOOP not connected yet"}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, minmax(120px, 1fr))",
+              gap: 12,
+              marginTop: 12,
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: theme.surface,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 10,
+                padding: 12,
+              }}
+            >
+              <div style={smallMutedTextStyle(theme)}>Recovery</div>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>
+                {whoopRecovery ?? "—"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: theme.surface,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 10,
+                padding: 12,
+              }}
+            >
+              <div style={smallMutedTextStyle(theme)}>Sleep Performance</div>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>
+                {whoopSleepPerformance != null ? `${whoopSleepPerformance}%` : "—"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: theme.surface,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 10,
+                padding: 12,
+              }}
+            >
+              <div style={smallMutedTextStyle(theme)}>30-Day Alignment</div>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>
+                {whoopAlignmentPercent != null ? `${whoopAlignmentPercent}%` : "—"}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ ...smallMutedTextStyle(theme), marginTop: 10 }}>
+            WHOOP readiness bucket: {whoopAlignmentBucket ?? "—"}
+
+            {whoopSyncMessage && (
+              <div
+                style={{
+                  ...smallMutedTextStyle(theme),
+                  marginTop: 10,
+                  color: theme.successText,
+                }}
+              >
+                {whoopSyncMessage}
+              </div>
+            )}
+
+            {whoopSyncError && (
+              <div
+                style={{
+                  ...smallMutedTextStyle(theme),
+                  marginTop: 10,
+                  color: theme.dangerText,
+                }}
+              >
+                Sync failed: {whoopSyncError}
+              </div>
+            )}
+          </div>
         </div>
 
         <button

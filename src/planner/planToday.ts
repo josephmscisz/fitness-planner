@@ -11,10 +11,11 @@ export type PlanInput = {
 };
 
 export type PlanResult = {
-  mode: WorkoutMode;
+  mode: "CHAOS" | "STEADY";
   workoutCode: string;
   duration: WorkoutDuration;
   reason: string;
+  selectedEnergy?: EnergyLevel;
   template?: ResolvedWorkoutTemplate;
 };
 
@@ -101,5 +102,6 @@ export function planToday(input: PlanInput): PlanResult {
     workoutCode,
     duration,
     reason,
+    selectedEnergy: input.energy,
   };
 }

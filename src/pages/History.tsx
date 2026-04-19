@@ -3,10 +3,12 @@ import {
   deleteExerciseLog,
   deleteWorkoutSession,
   getExerciseLogs,
+  getWhoopWorkoutById,
   getWorkoutSessions,
   initDb,
   updateExerciseLog,
   type ExerciseLog,
+  type WhoopWorkout,
   type WorkoutSession,
 } from "../lib/db";
 import type { AppTheme } from "../theme";
@@ -29,6 +31,7 @@ export default function History({ theme }: { theme: AppTheme }) {
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
   const [selected, setSelected] = useState<WorkoutSession | null>(null);
   const [logs, setLogs] = useState<EditableLog[]>([]);
+  const [matchedWhoopWorkout, setMatchedWhoopWorkout] = useState<WhoopWorkout | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,8 +48,16 @@ export default function History({ theme }: { theme: AppTheme }) {
 
   async function selectSession(session: WorkoutSession) {
     setSelected(session);
-    const sessionLogs = await getExerciseLogs(session.id);
+
+    const [sessionLogs, workout] = await Promise.all([
+      getExerciseLogs(session.id),
+      session.matched_whoop_workout_id
+        ? getWhoopWorkoutById(session.matched_whoop_workout_id)
+        : Promise.resolve(null),
+    ]);
+
     setLogs(sessionLogs.map((log) => ({ ...log, isDirty: false })));
+    setMatchedWhoopWorkout(workout);
   }
 
   function updateLogField(
@@ -100,6 +111,7 @@ export default function History({ theme }: { theme: AppTheme }) {
     if (selected?.id === sessionId) {
       setSelected(null);
       setLogs([]);
+      setMatchedWhoopWorkout(null);
     }
 
     await loadSessions();
@@ -109,19 +121,11 @@ export default function History({ theme }: { theme: AppTheme }) {
     <div style={pageStyle(theme)}>
       <h1 style={{ marginBottom: 8 }}>Workout History</h1>
       <p style={smallMutedTextStyle(theme)}>
-        Review past sessions, correct exercise logs, or delete sessions you do
-        not want to keep.
+        Review past sessions, correct exercise logs, and compare your training history to WHOOP data.
       </p>
 
       {loading ? (
-        <div
-          style={{
-            ...cardStyle(theme),
-            padding: 20,
-            marginTop: 20,
-            backgroundColor: theme.surface,
-          }}
-        >
+        <div style={{ ...cardStyle(theme), padding: 20, marginTop: 20, backgroundColor: theme.surface }}>
           Loading...
         </div>
       ) : (
@@ -134,13 +138,7 @@ export default function History({ theme }: { theme: AppTheme }) {
             marginTop: 20,
           }}
         >
-          <div
-            style={{
-              ...cardStyle(theme),
-              padding: 16,
-              backgroundColor: theme.surface,
-            }}
-          >
+          <div style={{ ...cardStyle(theme), padding: 16, backgroundColor: theme.surface }}>
             <h3 style={{ marginTop: 0, marginBottom: 12 }}>Sessions</h3>
 
             {sessions.length === 0 && (
@@ -152,21 +150,14 @@ export default function History({ theme }: { theme: AppTheme }) {
                 <div
                   key={s.id}
                   style={{
-                    border: `1px solid ${
-                      selected?.id === s.id ? theme.borderStrong : theme.border
-                    }`,
+                    border: `1px solid ${selected?.id === s.id ? theme.borderStrong : theme.border}`,
                     padding: 12,
                     borderRadius: 12,
                     backgroundColor:
-                      selected?.id === s.id
-                        ? theme.surfaceElevated
-                        : theme.surfaceMuted,
+                      selected?.id === s.id ? theme.surfaceElevated : theme.surfaceMuted,
                   }}
                 >
-                  <div
-                    onClick={() => selectSession(s)}
-                    style={{ cursor: "pointer", marginBottom: 10 }}
-                  >
+                  <div onClick={() => selectSession(s)} style={{ cursor: "pointer", marginBottom: 10 }}>
                     <div style={{ fontWeight: 700 }}>{s.title}</div>
                     <div style={smallMutedTextStyle(theme)}>
                       {new Date(s.started_at).toLocaleString()}
@@ -178,11 +169,7 @@ export default function History({ theme }: { theme: AppTheme }) {
 
                   <button
                     onClick={() => removeSession(s.id)}
-                    style={{
-                      ...secondaryButtonStyle(theme),
-                      padding: "8px 10px",
-                      fontSize: 13,
-                    }}
+                    style={{ ...secondaryButtonStyle(theme), padding: "8px 10px", fontSize: 13 }}
                   >
                     Delete Session
                   </button>
@@ -191,137 +178,231 @@ export default function History({ theme }: { theme: AppTheme }) {
             </div>
           </div>
 
-          <div
-            style={{
-              ...cardStyle(theme),
-              padding: 16,
-              backgroundColor: theme.surface,
-            }}
-          >
-            {selected ? (
-              <>
-                <h3 style={{ marginTop: 0, marginBottom: 6 }}>{selected.title}</h3>
-                <div style={{ ...smallMutedTextStyle(theme), marginBottom: 16 }}>
-                  {new Date(selected.started_at).toLocaleString()}
-                </div>
+          <div style={{ display: "grid", gap: 20 }}>
+            <div style={{ ...cardStyle(theme), padding: 16, backgroundColor: theme.surface }}>
+              {selected ? (
+                <>
+                  <h3 style={{ marginTop: 0, marginBottom: 6 }}>{selected.title}</h3>
+                  <div style={{ ...smallMutedTextStyle(theme), marginBottom: 16 }}>
+                    {new Date(selected.started_at).toLocaleString()}
+                  </div>
 
-                {logs.length === 0 ? (
-                  <p style={smallMutedTextStyle(theme)}>
-                    No exercise logs for this session.
-                  </p>
-                ) : (
                   <div
                     style={{
-                      overflowX: "auto",
-                      border: `1px solid ${theme.border}`,
-                      borderRadius: 12,
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(120px, 1fr))",
+                      gap: 12,
                     }}
                   >
-                    <table
-                      cellPadding={10}
+                    <div
                       style={{
-                        borderCollapse: "collapse",
-                        minWidth: 900,
-                        width: "100%",
-                        backgroundColor: theme.surface,
+                        backgroundColor: theme.surfaceMuted,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 10,
+                        padding: 12,
                       }}
                     >
-                      <thead>
-                        <tr>
-                          <th style={tableHeaderStyle(theme)}>Exercise</th>
-                          <th style={tableHeaderStyle(theme)}>Weight</th>
-                          <th style={tableHeaderStyle(theme)}>Sets</th>
-                          <th style={tableHeaderStyle(theme)}>Reps</th>
-                          <th style={tableHeaderStyle(theme)}>Notes</th>
-                          <th style={tableHeaderStyle(theme)}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {logs.map((log) => (
-                          <tr key={log.id}>
-                            <td style={tableCellStyle(theme)}>
-                              <strong>{log.exercise_name}</strong>
-                            </td>
+                      <div style={smallMutedTextStyle(theme)}>Subjective Energy</div>
+                      <div style={{ fontSize: 18, fontWeight: 700 }}>
+                        {selected.selected_energy ?? "—"}
+                      </div>
+                    </div>
 
-                            <td style={tableCellStyle(theme)}>
-                              <input
-                                style={inputStyle(theme)}
-                                value={log.weight ?? ""}
-                                onChange={(e) =>
-                                  updateLogField(log.id, "weight", e.target.value)
-                                }
-                              />
-                            </td>
+                    <div
+                      style={{
+                        backgroundColor: theme.surfaceMuted,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 10,
+                        padding: 12,
+                      }}
+                    >
+                      <div style={smallMutedTextStyle(theme)}>WHOOP Recovery</div>
+                      <div style={{ fontSize: 18, fontWeight: 700 }}>
+                        {selected.whoop_recovery_score ?? "—"}
+                      </div>
+                    </div>
 
-                            <td style={tableCellStyle(theme)}>
-                              <input
-                                style={inputStyle(theme)}
-                                value={log.actual_sets ?? ""}
-                                onChange={(e) =>
-                                  updateLogField(log.id, "actual_sets", e.target.value)
-                                }
-                              />
-                            </td>
-
-                            <td style={tableCellStyle(theme)}>
-                              <input
-                                style={inputStyle(theme)}
-                                value={log.actual_reps ?? ""}
-                                onChange={(e) =>
-                                  updateLogField(log.id, "actual_reps", e.target.value)
-                                }
-                              />
-                            </td>
-
-                            <td style={tableCellStyle(theme)}>
-                              <input
-                                style={inputStyle(theme)}
-                                value={log.notes ?? ""}
-                                onChange={(e) =>
-                                  updateLogField(log.id, "notes", e.target.value)
-                                }
-                              />
-                            </td>
-
-                            <td style={tableCellStyle(theme)}>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button
-                                  onClick={() => saveLog(log)}
-                                  disabled={!log.isDirty}
-                                  style={{
-                                    ...primaryButtonStyle(theme),
-                                    padding: "8px 10px",
-                                    fontSize: 13,
-                                    opacity: log.isDirty ? 1 : 0.6,
-                                  }}
-                                >
-                                  Save
-                                </button>
-
-                                <button
-                                  onClick={() => removeLog(log.id)}
-                                  style={{
-                                    ...secondaryButtonStyle(theme),
-                                    padding: "8px 10px",
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div
+                      style={{
+                        backgroundColor: theme.surfaceMuted,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 10,
+                        padding: 12,
+                      }}
+                    >
+                      <div style={smallMutedTextStyle(theme)}>WHOOP Sleep</div>
+                      <div style={{ fontSize: 18, fontWeight: 700 }}>
+                        {selected.whoop_sleep_performance != null
+                          ? `${selected.whoop_sleep_performance}%`
+                          : "—"}
+                      </div>
+                    </div>
                   </div>
-                )}
-              </>
-            ) : (
-              <div style={smallMutedTextStyle(theme)}>
-                Select a session to view and edit details.
-              </div>
-            )}
+
+                  <div style={{ ...smallMutedTextStyle(theme), marginTop: 10 }}>
+                    WHOOP alignment bucket: {selected.whoop_alignment_bucket ?? "—"}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 16,
+                      backgroundColor: theme.surfaceMuted,
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: 12,
+                      padding: 14,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 8 }}>Matched WHOOP Workout</div>
+
+                    {matchedWhoopWorkout ? (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(4, minmax(100px, 1fr))",
+                          gap: 12,
+                        }}
+                      >
+                        <div>
+                          <div style={smallMutedTextStyle(theme)}>Sport</div>
+                          <div>{matchedWhoopWorkout.sport_name ?? "—"}</div>
+                        </div>
+
+                        <div>
+                          <div style={smallMutedTextStyle(theme)}>Strain</div>
+                          <div>{matchedWhoopWorkout.strain ?? "—"}</div>
+                        </div>
+
+                        <div>
+                          <div style={smallMutedTextStyle(theme)}>Avg HR</div>
+                          <div>{matchedWhoopWorkout.average_hr ?? "—"}</div>
+                        </div>
+
+                        <div>
+                          <div style={smallMutedTextStyle(theme)}>Max HR</div>
+                          <div>{matchedWhoopWorkout.max_hr ?? "—"}</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={smallMutedTextStyle(theme)}>
+                        No matched WHOOP workout for this session yet.
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div style={smallMutedTextStyle(theme)}>
+                  Select a session to view WHOOP and log details.
+                </div>
+              )}
+            </div>
+
+            <div style={{ ...cardStyle(theme), padding: 16, backgroundColor: theme.surface }}>
+              {selected ? (
+                <>
+                  <h3 style={{ marginTop: 0, marginBottom: 12 }}>Exercise Logs</h3>
+
+                  {logs.length === 0 ? (
+                    <p style={smallMutedTextStyle(theme)}>No exercise logs for this session.</p>
+                  ) : (
+                    <div style={{ overflowX: "auto", border: `1px solid ${theme.border}`, borderRadius: 12 }}>
+                      <table
+                        cellPadding={10}
+                        style={{
+                          borderCollapse: "collapse",
+                          minWidth: 900,
+                          width: "100%",
+                          backgroundColor: theme.surface,
+                        }}
+                      >
+                        <thead>
+                          <tr>
+                            <th style={tableHeaderStyle(theme)}>Exercise</th>
+                            <th style={tableHeaderStyle(theme)}>Weight</th>
+                            <th style={tableHeaderStyle(theme)}>Sets</th>
+                            <th style={tableHeaderStyle(theme)}>Reps</th>
+                            <th style={tableHeaderStyle(theme)}>Notes</th>
+                            <th style={tableHeaderStyle(theme)}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {logs.map((log) => (
+                            <tr key={log.id}>
+                              <td style={tableCellStyle(theme)}>
+                                <strong>{log.exercise_name}</strong>
+                              </td>
+
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={log.weight ?? ""}
+                                  onChange={(e) => updateLogField(log.id, "weight", e.target.value)}
+                                />
+                              </td>
+
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={log.actual_sets ?? ""}
+                                  onChange={(e) => updateLogField(log.id, "actual_sets", e.target.value)}
+                                />
+                              </td>
+
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={log.actual_reps ?? ""}
+                                  onChange={(e) => updateLogField(log.id, "actual_reps", e.target.value)}
+                                />
+                              </td>
+
+                              <td style={tableCellStyle(theme)}>
+                                <input
+                                  style={inputStyle(theme)}
+                                  value={log.notes ?? ""}
+                                  onChange={(e) => updateLogField(log.id, "notes", e.target.value)}
+                                />
+                              </td>
+
+                              <td style={tableCellStyle(theme)}>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  <button
+                                    onClick={() => saveLog(log)}
+                                    disabled={!log.isDirty}
+                                    style={{
+                                      ...primaryButtonStyle(theme),
+                                      padding: "8px 10px",
+                                      fontSize: 13,
+                                      opacity: log.isDirty ? 1 : 0.6,
+                                    }}
+                                  >
+                                    Save
+                                  </button>
+
+                                  <button
+                                    onClick={() => removeLog(log.id)}
+                                    style={{
+                                      ...secondaryButtonStyle(theme),
+                                      padding: "8px 10px",
+                                      fontSize: 13,
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={smallMutedTextStyle(theme)}>
+                  Select a session to view and edit details.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
