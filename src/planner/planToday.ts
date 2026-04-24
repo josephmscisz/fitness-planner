@@ -1,6 +1,12 @@
-import type { ResolvedWorkoutTemplate, WorkoutDuration, WorkoutMode } from "../types/workouts";
+import type { ResolvedWorkoutTemplate, WorkoutDuration } from "../types/workouts";
 export type ModePreference = "auto" | "chaos" | "steady";
 export type EnergyLevel = "low" | "medium" | "high";
+export type ChallengeLevel =
+  | "off"
+  | "conservative"
+  | "aggressive"
+  | "very_aggressive"
+  | "getting_going_again";
 
 export type PlanInput = {
   minutes: number;
@@ -10,6 +16,20 @@ export type PlanInput = {
   sessionsLast7Days: number;
 };
 
+export type ChallengeSuggestion = {
+  exerciseName: string;
+  targetReps: number;
+  targetWeight: number;
+  evidence: string;
+  trendPerSessionPct: number | null;
+  throttled: boolean;
+};
+
+export type AccessoryProgressionCue = {
+  exerciseName: string;
+  cue: string;
+};
+
 export type PlanResult = {
   mode: "CHAOS" | "STEADY";
   workoutCode: string;
@@ -17,6 +37,11 @@ export type PlanResult = {
   reason: string;
   selectedEnergy?: EnergyLevel;
   template?: ResolvedWorkoutTemplate;
+  challengeMode?: boolean;
+  challengeLevel?: ChallengeLevel;
+  challengeSuggestions?: ChallengeSuggestion[];
+  accessoryProgressionCues?: AccessoryProgressionCue[];
+  gettingGoingAgainSessionsRemaining?: number;
 };
 
 function getDuration(minutes: number, energy: EnergyLevel): WorkoutDuration {

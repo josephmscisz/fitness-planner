@@ -54,6 +54,71 @@ type ExerciseForm = {
   tutorialUrl: string;
 };
 
+function getLoadStepForExerciseName(exerciseName: string): number {
+  const text = exerciseName.toLowerCase();
+  if (text.includes("deadlift") || text.includes("squat")) return 10;
+  return 5;
+}
+
+function reduceRecommendedWeightForGettingGoingAgain(
+  exerciseName: string,
+  weight: string
+): string {
+  const parsed = Number(weight);
+  if (!Number.isFinite(parsed) || parsed <= 0) return weight;
+
+  const step = getLoadStepForExerciseName(exerciseName);
+  const reduced = Math.max(step, Math.round((parsed * 0.75) / step) * step);
+  return String(reduced);
+}
+
+function parseNumeric(value: string): number | null {
+  const parsed = parseFloat(value);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function getEstimatedOneRepMax(weight: string, plannedReps: string): number | null {
+  const w = parseNumeric(weight);
+  const r = parseNumeric(plannedReps);
+  if (w == null || r == null || w <= 0 || r <= 0) return null;
+  return Math.round(w * (1 + r / 30));
+}
+
+function getEfficientPlateLoadingText(weight: string): string | null {
+  const totalWeight = parseNumeric(weight);
+  if (totalWeight == null || totalWeight <= 0) return null;
+
+  const barWeight = 45;
+  const plateSizes = [45, 35, 25, 10, 5, 2.5];
+  const targetPerSide = Math.max(0, (totalWeight - barWeight) / 2);
+  // Closest load achievable with standard 2.5 lb increments per side.
+  let remaining = Math.round(targetPerSide / 2.5) * 2.5;
+
+  const counts: Array<{ plate: number; count: number }> = [];
+  for (const plate of plateSizes) {
+    const count = Math.floor((remaining + 1e-9) / plate);
+    if (count > 0) {
+      counts.push({ plate, count });
+      remaining -= count * plate;
+      remaining = Math.round(remaining * 100) / 100;
+    }
+  }
+
+  if (counts.length === 0) {
+    return "bar only";
+  }
+
+  const perSideText = counts
+    .map((item) => `${item.plate}x${item.count}`)
+    .join(" + ");
+  const totalText = counts
+    .map((item) => `${item.plate}x${item.count * 2}`)
+    .join(" + ");
+
+  return `${perSideText} (${totalText})`;
+}
+
 function getBadgeStyle(theme: AppTheme, outcome: ExerciseForm["progressionOutcome"]) {
   const base: React.CSSProperties = {
     display: "inline-block",
@@ -220,22 +285,63 @@ export default function SessionLogger({
     async function loadWithSuggestions() {
       if (!plan.template) return;
 
+      const gettingGoingAgainActive =
+        plan.challengeLevel === "getting_going_again" &&
+        (plan.gettingGoingAgainSessionsRemaining ?? 0) > 0;
+      const gettingGoingAgainReason = gettingGoingAgainActive
+        ? `Getting Going Again ramp active (${plan.gettingGoingAgainSessionsRemaining} session(s) remaining): using ~75% recommended load and holding increases.`
+        : "";
+
       const newEntries: ExerciseForm[] = [];
 
       for (const exercise of plan.template.exercises) {
         const lastLog = await getLastExerciseLog(exercise.exercise_name);
         const decision = getProgressionDecision(exercise.exercise_name, lastLog);
 
+        const challengeSuggestion =
+          plan.challengeMode && plan.challengeSuggestions
+            ? plan.challengeSuggestions.find(
+                (suggestion) =>
+                  suggestion.exerciseName.toLowerCase() ===
+                  exercise.exercise_name.toLowerCase()
+              )
+            : undefined;
+
+        const useChallengeSuggestion = !!challengeSuggestion;
+        const baseWeight = useChallengeSuggestion
+          ? String(challengeSuggestion.targetWeight)
+          : decision.suggestedWeight;
+        const adjustedWeight = gettingGoingAgainActive
+          ? reduceRecommendedWeightForGettingGoingAgain(
+              exercise.exercise_name,
+              baseWeight
+            )
+          : baseWeight;
+
         newEntries.push({
           exerciseName: exercise.exercise_name,
           plannedSets: exercise.sets,
-          plannedReps: exercise.reps,
-          weight: decision.suggestedWeight,
+          plannedReps: useChallengeSuggestion
+            ? String(challengeSuggestion.targetReps)
+            : exercise.reps,
+          weight: adjustedWeight,
           actualSets: "",
           actualReps: "",
           notes: "",
-          progressionReason: decision.reason,
-          progressionOutcome: decision.outcome,
+          progressionReason: gettingGoingAgainActive
+            ? `${gettingGoingAgainReason} ${useChallengeSuggestion
+                ? `${challengeSuggestion.throttled ? "Throttle" : "Challenge"} target source: ${challengeSuggestion.evidence}.`
+                : decision.reason}`
+            : useChallengeSuggestion
+            ? `${challengeSuggestion.throttled ? "Throttle" : "Challenge"} target auto-applied from recent trend (${challengeSuggestion.evidence}). ${decision.reason}`
+            : decision.reason,
+          progressionOutcome: gettingGoingAgainActive
+            ? "hold"
+            : useChallengeSuggestion
+            ? challengeSuggestion.throttled
+              ? "hold"
+              : "increase"
+            : decision.outcome,
           lastWeight: lastLog?.weight ?? "",
           lastActualSets: lastLog?.actual_sets ?? "",
           lastActualReps: lastLog?.actual_reps ?? "",
@@ -280,17 +386,28 @@ export default function SessionLogger({
   async function addExerciseToSession(exercise: ExerciseRecord) {
     const lastLog = await getLastExerciseLog(exercise.name);
     const decision = getProgressionDecision(exercise.name, lastLog);
+    const gettingGoingAgainActive =
+      plan.challengeLevel === "getting_going_again" &&
+      (plan.gettingGoingAgainSessionsRemaining ?? 0) > 0;
+    const adjustedWeight = gettingGoingAgainActive
+      ? reduceRecommendedWeightForGettingGoingAgain(
+          exercise.name,
+          decision.suggestedWeight
+        )
+      : decision.suggestedWeight;
 
     const newEntry: ExerciseForm = {
       exerciseName: exercise.name,
       plannedSets: "",
       plannedReps: "",
-      weight: decision.suggestedWeight,
+      weight: adjustedWeight,
       actualSets: "",
       actualReps: "",
       notes: "",
-      progressionReason: decision.reason,
-      progressionOutcome: decision.outcome,
+      progressionReason: gettingGoingAgainActive
+        ? `Getting Going Again ramp active (${plan.gettingGoingAgainSessionsRemaining} session(s) remaining): using ~75% recommended load and holding increases. ${decision.reason}`
+        : decision.reason,
+      progressionOutcome: gettingGoingAgainActive ? "hold" : decision.outcome,
       lastWeight: lastLog?.weight ?? "",
       lastActualSets: lastLog?.actual_sets ?? "",
       lastActualReps: lastLog?.actual_reps ?? "",
@@ -527,6 +644,15 @@ export default function SessionLogger({
                         value={entry.weight}
                         onChange={(e) => updateEntry(index, "weight", e.target.value)}
                       />
+                      {(() => {
+                        const loadingText = getEfficientPlateLoadingText(entry.weight);
+                        if (!loadingText) return null;
+                        return (
+                          <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                            Per side: {loadingText}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     <td style={tableCellStyle(theme)}>
@@ -557,6 +683,15 @@ export default function SessionLogger({
                         value={entry.notes}
                         onChange={(e) => updateEntry(index, "notes", e.target.value)}
                       />
+                      {(() => {
+                        const est1rm = getEstimatedOneRepMax(entry.weight, entry.plannedReps);
+                        if (est1rm == null) return null;
+                        return (
+                          <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                            ~{est1rm} 1RM
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     <td style={tableCellStyle(theme)}>{renderLastSession(entry)}</td>
@@ -644,6 +779,15 @@ export default function SessionLogger({
                       value={entry.weight}
                       onChange={(e) => updateEntry(index, "weight", e.target.value)}
                     />
+                    {(() => {
+                      const loadingText = getEfficientPlateLoadingText(entry.weight);
+                      if (!loadingText) return null;
+                      return (
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                          Per side: {loadingText}
+                        </div>
+                      );
+                    })()}
                   </Field>
 
                   <Field label="Actual Sets" theme={theme}>
@@ -674,6 +818,15 @@ export default function SessionLogger({
                       value={entry.notes}
                       onChange={(e) => updateEntry(index, "notes", e.target.value)}
                     />
+                    {(() => {
+                      const est1rm = getEstimatedOneRepMax(entry.weight, entry.plannedReps);
+                      if (est1rm == null) return null;
+                      return (
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                          ~{est1rm} 1RM
+                        </div>
+                      );
+                    })()}
                   </Field>
                 </div>
 

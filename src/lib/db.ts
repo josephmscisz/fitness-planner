@@ -199,6 +199,48 @@ export async function initDb() {
     await db.execute(`ALTER TABLE workout_sessions ADD COLUMN matched_whoop_workout_id TEXT`);
   } catch {}
 
+  // Seed accessory metadata on exercises (idempotent — only updates rows with no role_type set)
+  await db.execute(`
+    UPDATE exercises SET role_type = 'accessory', accessory_slot = 'quads_iso'
+    WHERE name IN ('Leg Extension', 'Bulgarian Split Squat')
+      AND (role_type IS NULL OR role_type = '')
+  `);
+  await db.execute(`
+    UPDATE exercises SET role_type = 'accessory', accessory_slot = 'hamstrings_iso'
+    WHERE name IN ('Hamstring Curl')
+      AND (role_type IS NULL OR role_type = '')
+  `);
+  await db.execute(`
+    UPDATE exercises SET role_type = 'accessory', accessory_slot = 'lats'
+    WHERE name IN ('Pull-Up', 'Lat Pulldown')
+      AND (role_type IS NULL OR role_type = '')
+  `);
+  await db.execute(`
+    UPDATE exercises SET role_type = 'accessory', accessory_slot = 'upper_back'
+    WHERE name IN ('Barbell Row', 'Face Pull', 'Chest Supported Row', 'Cable Row', 'Rear Delt Raise')
+      AND (role_type IS NULL OR role_type = '')
+  `);
+  await db.execute(`
+    UPDATE exercises SET role_type = 'accessory', accessory_slot = 'chest_accessory'
+    WHERE name IN ('Incline Press', 'Cable Fly')
+      AND (role_type IS NULL OR role_type = '')
+  `);
+  await db.execute(`
+    UPDATE exercises SET role_type = 'accessory', accessory_slot = 'triceps'
+    WHERE name IN ('Triceps Pushdown', 'Overhead Cable Extension', 'Single Arm Pushdown')
+      AND (role_type IS NULL OR role_type = '')
+  `);
+  await db.execute(`
+    UPDATE exercises SET role_type = 'accessory', accessory_slot = 'biceps'
+    WHERE name IN ('Curl')
+      AND (role_type IS NULL OR role_type = '')
+  `);
+  await db.execute(`
+    UPDATE exercises SET role_type = 'accessory', accessory_slot = 'shoulders'
+    WHERE name IN ('Lateral Raise')
+      AND (role_type IS NULL OR role_type = '')
+  `);
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS whoop_connections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -592,6 +634,52 @@ export async function getWorkoutSessions(): Promise<WorkoutSession[]> {
   );
 }
 
+export async function getConsecutiveCompletedSessionsWithReasonToken(
+  token: string,
+  lookback: number = 8
+): Promise<number> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ reason?: string | null }>>(
+    `SELECT reason
+     FROM workout_sessions
+     WHERE completed_at IS NOT NULL
+     ORDER BY started_at DESC
+     LIMIT ?`,
+    [lookback]
+  );
+
+  let count = 0;
+
+  for (const row of rows) {
+    const reason = (row.reason ?? "").toLowerCase();
+    if (reason.includes(token.toLowerCase())) {
+      count += 1;
+      continue;
+    }
+
+    break;
+  }
+
+  return count;
+}
+
+export async function getRecentCompletedSessionsWithReasonToken(
+  token: string,
+  limit: number = 3
+): Promise<Array<{ started_at: string; completed_at?: string | null }>> {
+  const db = await getDb();
+
+  return db.select<Array<{ started_at: string; completed_at?: string | null }>>(
+    `SELECT started_at, completed_at
+     FROM workout_sessions
+     WHERE completed_at IS NOT NULL
+       AND LOWER(COALESCE(reason, '')) LIKE ?
+     ORDER BY started_at DESC
+     LIMIT ?`,
+    [`%${token.toLowerCase()}%`, limit]
+  );
+}
+
 export type ExerciseLog = {
   id: number;
   session_id: number;
@@ -619,16 +707,191 @@ export async function getExerciseLogs(sessionId: number): Promise<ExerciseLog[]>
 export async function getLastExerciseLog(exerciseName: string) {
   const db = await getDb();
 
-  const rows = await db.select<any[]>(
-    `SELECT *
-     FROM exercise_logs
-     WHERE exercise_name = ?
-     ORDER BY id DESC
-     LIMIT 1`,
+  type ExerciseLogWithSessionMeta = {
+    id: number;
+    session_id: number;
+    exercise_name: string;
+    planned_sets?: string | null;
+    planned_reps?: string | null;
+    weight?: string | null;
+    actual_sets?: string | null;
+    actual_reps?: string | null;
+    notes?: string | null;
+    started_at: string;
+    session_reason?: string | null;
+  };
+
+  const rows = await db.select<ExerciseLogWithSessionMeta[]>(
+    `SELECT
+       el.id,
+       el.session_id,
+       el.exercise_name,
+       el.planned_sets,
+       el.planned_reps,
+       el.weight,
+       el.actual_sets,
+       el.actual_reps,
+       el.notes,
+       ws.started_at,
+       ws.reason as session_reason
+     FROM exercise_logs el
+     INNER JOIN workout_sessions ws ON ws.id = el.session_id
+     WHERE LOWER(el.exercise_name) = LOWER(?)
+     ORDER BY ws.started_at DESC, el.id DESC
+     LIMIT 12`,
     [exerciseName]
   );
 
-  return rows[0] ?? null;
+  const parseNumber = (value?: string | null): number | null => {
+    if (!value) return null;
+    const n = parseFloat(value);
+    return Number.isNaN(n) ? null : n;
+  };
+
+  const isChallengeSession = (reason?: string | null): boolean =>
+    (reason ?? "").toLowerCase().includes("challenge mode");
+
+  const parsePlannedMinimumReps = (planned?: string | null): number | null => {
+    if (!planned) return null;
+    const cleaned = planned.toLowerCase().replace(/per leg|\/leg/g, "").trim();
+
+    const rangeMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/);
+    if (rangeMatch) {
+      const min = parseFloat(rangeMatch[1]);
+      return Number.isNaN(min) ? null : min;
+    }
+
+    const singleMatch = cleaned.match(/\d+(?:\.\d+)?/);
+    if (!singleMatch) return null;
+    const single = parseFloat(singleMatch[0]);
+    return Number.isNaN(single) ? null : single;
+  };
+
+  const parseActualRepValues = (actual?: string | null): number[] => {
+    if (!actual) return [];
+    const cleaned = actual.toLowerCase().replace(/per leg|\/leg/g, "").trim();
+    if (!cleaned) return [];
+
+    if (/^\d+(?:\.\d+)?$/.test(cleaned)) {
+      const n = parseFloat(cleaned);
+      return Number.isNaN(n) ? [] : [n];
+    }
+
+    const normalized = cleaned.replace(/[|;/]/g, ",");
+    const commaValues = normalized
+      .split(",")
+      .map((piece) => parseFloat(piece.trim()))
+      .filter((n) => !Number.isNaN(n));
+    if (commaValues.length > 0) return commaValues;
+
+    const dashValues = cleaned
+      .split("-")
+      .map((piece) => parseFloat(piece.trim()))
+      .filter((n) => !Number.isNaN(n));
+
+    if (dashValues.length >= 3) return dashValues;
+
+    return [];
+  };
+
+  const isFullyCompletedLog = (row: ExerciseLogWithSessionMeta): boolean => {
+    const noteText = (row.notes ?? "").toLowerCase();
+    if (noteText.includes("[partial]")) return false;
+
+    const plannedSets = parseNumber(row.planned_sets);
+    const actualSets = parseNumber(row.actual_sets);
+    if (plannedSets == null || actualSets == null || actualSets < plannedSets) {
+      return false;
+    }
+
+    const plannedMinReps = parsePlannedMinimumReps(row.planned_reps);
+    if (plannedMinReps == null) return false;
+
+    const actualRepValues = parseActualRepValues(row.actual_reps);
+    if (actualRepValues.length > 0) {
+      return Math.min(...actualRepValues) >= plannedMinReps;
+    }
+
+    const singleActual = parseNumber(row.actual_reps);
+    if (singleActual == null) return false;
+
+    return singleActual >= plannedMinReps;
+  };
+
+  const toLastLogShape = (row: ExerciseLogWithSessionMeta) => ({
+    weight: row.weight ?? "",
+    planned_sets: row.planned_sets ?? "",
+    planned_reps: row.planned_reps ?? "",
+    actual_sets: row.actual_sets ?? "",
+    actual_reps: row.actual_reps ?? "",
+    notes: row.notes ?? "",
+  });
+
+  if (rows.length === 0) return null;
+
+  const mostRecent = rows[0];
+  if (!isChallengeSession(mostRecent.session_reason)) {
+    return toLastLogShape(mostRecent);
+  }
+
+  if (!isFullyCompletedLog(mostRecent)) {
+    const fallback = rows.find((row) => !isChallengeSession(row.session_reason));
+    return fallback ? toLastLogShape(fallback) : null;
+  }
+
+  const baseline = rows.find((row) => !isChallengeSession(row.session_reason));
+  if (!baseline) {
+    return toLastLogShape(mostRecent);
+  }
+
+  const challengeWeight = parseNumber(mostRecent.weight);
+  const baselineWeight = parseNumber(baseline.weight);
+
+  if (challengeWeight == null || baselineWeight == null) {
+    return toLastLogShape(baseline);
+  }
+
+  const blendedWeight = baselineWeight + (challengeWeight - baselineWeight) * 0.5;
+
+  return {
+    ...toLastLogShape(mostRecent),
+    weight: String(blendedWeight),
+    notes: `${mostRecent.notes ?? ""} [challenge damped 50%]`.trim(),
+  };
+}
+
+export type RecentExercisePerformance = {
+  exercise_name: string;
+  weight?: string | null;
+  planned_reps?: string | null;
+  actual_reps?: string | null;
+  notes?: string | null;
+  started_at: string;
+};
+
+export async function getRecentExercisePerformance(
+  exerciseName: string,
+  limit: number = 6
+): Promise<RecentExercisePerformance[]> {
+  const db = await getDb();
+
+  return db.select<RecentExercisePerformance[]>(
+    `SELECT
+       el.exercise_name,
+       el.weight,
+       el.planned_reps,
+       el.actual_reps,
+       el.notes,
+       ws.started_at
+     FROM exercise_logs el
+     INNER JOIN workout_sessions ws ON ws.id = el.session_id
+     WHERE LOWER(el.exercise_name) = LOWER(?)
+       AND COALESCE(TRIM(el.weight), '') != ''
+       AND COALESCE(TRIM(el.actual_reps), '') != ''
+     ORDER BY ws.started_at DESC, el.id DESC
+     LIMIT ?`,
+    [exerciseName, limit]
+  );
 }
 
 export type ExerciseRecord = {
@@ -929,11 +1192,27 @@ export type AccessoryCandidate = {
   last_used_at?: string | null;
 };
 
+function deriveAccessorySlotFallback(accessorySlot: string): string {
+  const normalized = accessorySlot.trim().toLowerCase();
+
+  if (normalized.endsWith("_iso")) {
+    return normalized.slice(0, -4);
+  }
+
+  if (normalized.endsWith("_accessory")) {
+    return normalized.slice(0, -10);
+  }
+
+  return "";
+}
+
 export async function getAccessoryCandidates(filters: {
   accessorySlot: string;
   equipment?: string;
 }): Promise<AccessoryCandidate[]> {
   const db = await getDb();
+  const requestedSlot = filters.accessorySlot.trim().toLowerCase();
+  const fallbackSlot = deriveAccessorySlotFallback(requestedSlot);
 
   let query = `
     SELECT
@@ -949,10 +1228,13 @@ export async function getAccessoryCandidates(filters: {
     LEFT JOIN exercise_logs el ON el.exercise_name = e.name
     LEFT JOIN workout_sessions ws ON ws.id = el.session_id
     WHERE e.role_type = 'accessory'
-      AND e.accessory_slot = ?
+      AND (
+        LOWER(COALESCE(e.accessory_slot, '')) = ?
+        OR (? != '' AND LOWER(COALESCE(e.accessory_slot, '')) = ?)
+      )
   `;
 
-  const params: string[] = [filters.accessorySlot];
+  const params: string[] = [requestedSlot, fallbackSlot, fallbackSlot];
 
   if (filters.equipment) {
     query += ` AND e.equipment = ?`;
@@ -968,8 +1250,16 @@ export async function getAccessoryCandidates(filters: {
       e.accessory_priority,
       e.accessory_slot,
       e.tutorial_url
-    ORDER BY e.name ASC
+    ORDER BY
+      CASE
+        WHEN LOWER(COALESCE(e.accessory_slot, '')) = ? THEN 0
+        WHEN ? != '' AND LOWER(COALESCE(e.accessory_slot, '')) = ? THEN 1
+        ELSE 2
+      END,
+      e.name ASC
   `;
+
+  params.push(requestedSlot, fallbackSlot, fallbackSlot);
 
   return db.select<AccessoryCandidate[]>(query, params);
 }
@@ -979,6 +1269,8 @@ export async function getRecentlyUsedAccessoryNamesBySlot(
   limit: number = 2
 ): Promise<string[]> {
   const db = await getDb();
+  const requestedSlot = accessorySlot.trim().toLowerCase();
+  const fallbackSlot = deriveAccessorySlotFallback(requestedSlot);
 
   const rows = await db.select<{ exercise_name: string }[]>(
     `
@@ -987,11 +1279,14 @@ export async function getRecentlyUsedAccessoryNamesBySlot(
     INNER JOIN workout_sessions ws ON ws.id = el.session_id
     INNER JOIN exercises e ON e.name = el.exercise_name
     WHERE e.role_type = 'accessory'
-      AND e.accessory_slot = ?
+      AND (
+        LOWER(COALESCE(e.accessory_slot, '')) = ?
+        OR (? != '' AND LOWER(COALESCE(e.accessory_slot, '')) = ?)
+      )
     ORDER BY ws.started_at DESC
     LIMIT ?
     `,
-    [accessorySlot, limit]
+    [requestedSlot, fallbackSlot, fallbackSlot, limit]
   );
 
   return rows.map((row) => row.exercise_name);
@@ -1096,6 +1391,9 @@ export async function getWorkoutTemplateByCodeAndDuration(
 
         continue;
       }
+
+      // No candidate found for this rotating slot — skip the row entirely rather than emitting an empty name
+      continue;
     }
 
     if (row.exercise_name) {
@@ -1471,11 +1769,20 @@ function recoveryToBucket(recoveryScore?: number | null): "low" | "medium" | "hi
   return "high";
 }
 
+function energyToIndex(value?: string | null): number | null {
+  const v = (value ?? "").toLowerCase();
+  if (v === "low") return 0;
+  if (v === "medium") return 1;
+  if (v === "high") return 2;
+  return null;
+}
+
 export async function computeWhoopAlignment30d(): Promise<{
   percent: number | null;
   matchedDays: number;
   totalDays: number;
   latestBucket: "low" | "medium" | "high" | null;
+  averageScore: number | null;
 }> {
   const db = await getDb();
 
@@ -1499,28 +1806,43 @@ export async function computeWhoopAlignment30d(): Promise<{
 
   let matchedDays = 0;
   let totalDays = 0;
+  let totalScore = 0;
 
   for (const row of rows) {
-    const energy = (row.selected_energy ?? "").toLowerCase();
+    const subjective = energyToIndex(row.selected_energy);
     const bucket = recoveryToBucket(row.whoop_recovery_score);
+    const objective = energyToIndex(bucket);
 
-    if (!bucket) continue;
-    if (!["low", "medium", "high"].includes(energy)) continue;
+    if (subjective == null || objective == null) continue;
 
     totalDays += 1;
-    if (energy === bucket) {
+
+    const diff = Math.abs(subjective - objective);
+
+    let score = 0;
+    if (diff === 0) {
+      score = 1;
       matchedDays += 1;
+    } else if (diff === 1) {
+      score = 0.5;
+    } else {
+      score = 0;
     }
+
+    totalScore += score;
   }
 
   const latest = await getLatestWhoopDailyMetric();
   const latestBucket = recoveryToBucket(latest?.recovery_score ?? null);
 
+  const averageScore = totalDays > 0 ? totalScore / totalDays : null;
+
   return {
-    percent: totalDays > 0 ? Math.round((matchedDays / totalDays) * 100) : null,
+    percent: averageScore != null ? Math.round(averageScore * 100) : null,
     matchedDays,
     totalDays,
     latestBucket,
+    averageScore,
   };
 }
 
