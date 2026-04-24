@@ -38,6 +38,7 @@ type ExerciseStatus = "completed" | "partial" | "skipped";
 
 type ExerciseForm = {
   exerciseName: string;
+  isAbs: boolean;
   plannedSets: string;
   plannedReps: string;
   weight: string;
@@ -53,6 +54,9 @@ type ExerciseForm = {
   status: ExerciseStatus;
   tutorialUrl: string;
 };
+
+const ABS_SKIPPED_TOKEN = "[abs:skipped]";
+const ABS_DONE_TOKEN = "[abs:done]";
 
 function getLoadStepForExerciseName(exerciseName: string): number {
   const text = exerciseName.toLowerCase();
@@ -320,6 +324,9 @@ export default function SessionLogger({
 
         newEntries.push({
           exerciseName: exercise.exercise_name,
+          isAbs: (plan.absExerciseNames ?? []).some(
+            (name) => name.toLowerCase() === exercise.exercise_name.toLowerCase()
+          ),
           plannedSets: exercise.sets,
           plannedReps: useChallengeSuggestion
             ? String(challengeSuggestion.targetReps)
@@ -398,6 +405,7 @@ export default function SessionLogger({
 
     const newEntry: ExerciseForm = {
       exerciseName: exercise.name,
+      isAbs: false,
       plannedSets: "",
       plannedReps: "",
       weight: adjustedWeight,
@@ -424,6 +432,12 @@ export default function SessionLogger({
     setExerciseEquipment("");
   }
 
+  function handleSkipAbsBlock() {
+    setEntries((current) =>
+      current.map((entry) => (entry.isAbs ? { ...entry, status: "skipped" } : entry))
+    );
+  }
+
   async function handleSaveSession() {
     if (!plan.template) {
       setError("No workout template found.");
@@ -437,12 +451,24 @@ export default function SessionLogger({
       const startedAt = new Date().toISOString();
       const matchedWhoopWorkoutId = await matchWhoopWorkoutToSession(startedAt, 4);
 
+      const absEntries = entries.filter((entry) => entry.isAbs);
+      const absPlanned = absEntries.length > 0;
+      const absCompleted = absEntries.some((entry) => entry.status !== "skipped");
+      const absOutcomeToken = absPlanned
+        ? absCompleted
+          ? ABS_DONE_TOKEN
+          : ABS_SKIPPED_TOKEN
+        : "";
+      const reasonWithAbsOutcome = absOutcomeToken
+        ? `${plan.reason} ${absOutcomeToken}`
+        : plan.reason;
+
       const sessionId = await createWorkoutSession({
         mode: plan.mode,
         workoutCode: plan.workoutCode,
         duration: plan.duration,
         title: plan.template.title,
-        reason: plan.reason,
+        reason: reasonWithAbsOutcome,
         selectedEnergy: plan.selectedEnergy ?? "",
         whoopRecoveryScore: whoopRecovery,
         whoopSleepPerformance: whoopSleepPerformance,
@@ -510,6 +536,9 @@ export default function SessionLogger({
   const partialCount = entries.filter((entry) => entry.status === "partial").length;
   const skippedCount = entries.filter((entry) => entry.status === "skipped").length;
   const totalCount = entries.length;
+  const hasAbsBlock = entries.some((entry) => entry.isAbs);
+  const allAbsAlreadySkipped =
+    hasAbsBlock && entries.filter((entry) => entry.isAbs).every((entry) => entry.status === "skipped");
 
   return (
     <div style={pageStyle(theme)}>
@@ -519,7 +548,48 @@ export default function SessionLogger({
         <p style={{ margin: "0 0 6px 0" }}>
           <strong>{plan.template?.title}</strong>
         </p>
+
+        {plan.absBlockIncluded && (
+          <div
+            style={{
+              display: "inline-block",
+              marginBottom: 8,
+              padding: "4px 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 700,
+              border: `1px solid ${theme.borderStrong}`,
+              backgroundColor: plan.absForcedUntilCompleted
+                ? theme.warningBg
+                : theme.accentSoft,
+              color: plan.absForcedUntilCompleted
+                ? theme.warningText
+                : theme.accent,
+            }}
+          >
+            {plan.absForcedUntilCompleted
+              ? "Abs Active (Forced Until Done)"
+              : "Abs Active"}
+          </div>
+        )}
+
         <p style={{ margin: 0, color: theme.textMuted }}>{plan.reason}</p>
+
+        {hasAbsBlock && (
+          <div style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={handleSkipAbsBlock}
+              disabled={allAbsAlreadySkipped}
+              style={{
+                ...secondaryButtonStyle(theme),
+                opacity: allAbsAlreadySkipped ? 0.6 : 1,
+              }}
+            >
+              Skip Abs Block
+            </button>
+          </div>
+        )}
 
         <div
           style={{

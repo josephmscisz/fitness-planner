@@ -18,6 +18,6 @@ app.get("/health", (_req, res) => {
     res.json({ ok: true });
 });
 app.use("/whoop", whoop_1.default);
-app.listen(PORT, () => {
-    console.log(`WHOOP backend listening on http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`WHOOP backend listening on port ${PORT}`);
 });

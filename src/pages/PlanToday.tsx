@@ -11,6 +11,7 @@ import {
 } from "../planner/planToday";
 import {
   computeWhoopAlignment30d,
+  getExercises,
   getLastWhoopSyncTime,
   getLatestWhoopDailyMetric,
   getMostRecentWorkoutCode,
@@ -18,6 +19,7 @@ import {
   getRecentCompletedSessionsWithReasonToken,
   getRecentExercisePerformance,
   getSessionsLast7DaysCount,
+  getWorkoutSessions,
   getWhoopConnection,
   getWorkoutTemplateByCodeAndDuration,
   initDb,
@@ -45,6 +47,15 @@ import SessionLogger from "./SessionLogger";
 const GETTING_GOING_AGAIN_TOKEN = "[gga]";
 const GETTING_GOING_AGAIN_TOTAL_SESSIONS = 3;
 const GETTING_GOING_AGAIN_LOCKOUT_DAYS = 30;
+const ABS_PLANNED_TOKEN = "[abs:planned]";
+const ABS_SKIPPED_TOKEN = "[abs:skipped]";
+const ABS_DONE_TOKEN = "[abs:done]";
+const ABS_MAX_SESSIONS_WITHOUT = 4;
+
+type AbsScheduleState = {
+  includeAbs: boolean;
+  forcedUntilCompleted: boolean;
+};
 
 type ParsedRecentSet = {
   weight: number;
@@ -53,6 +64,84 @@ type ParsedRecentSet = {
   notes: string;
   estimatedOneRepMax: number;
 };
+
+function isObliqueExerciseName(name: string): boolean {
+  const text = name.toLowerCase();
+  return (
+    text.includes("oblique") ||
+    text.includes("side bend") ||
+    text.includes("woodchop") ||
+    text.includes("pallof") ||
+    text.includes("twist") ||
+    text.includes("russian twist")
+  );
+}
+
+function isAbsExerciseRecord(exercise: {
+  name?: string | null;
+  category?: string | null;
+  movement_pattern?: string | null;
+  primary_muscles?: string | null;
+}): boolean {
+  const combined = [
+    exercise.name ?? "",
+    exercise.category ?? "",
+    exercise.movement_pattern ?? "",
+    exercise.primary_muscles ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    combined.includes("abs") ||
+    combined.includes("abdom") ||
+    combined.includes("core") ||
+    combined.includes("oblique")
+  );
+}
+
+function chooseRandomDistinct<T>(items: T[], count: number): T[] {
+  const pool = [...items];
+  const chosen: T[] = [];
+
+  while (pool.length > 0 && chosen.length < count) {
+    const index = Math.floor(Math.random() * pool.length);
+    const [next] = pool.splice(index, 1);
+    chosen.push(next);
+  }
+
+  return chosen;
+}
+
+function getAbsScheduleState(reasonsNewestFirst: Array<string | null | undefined>): AbsScheduleState {
+  const normalized = reasonsNewestFirst.map((reason) => (reason ?? "").toLowerCase());
+
+  const latestSkipIndex = normalized.findIndex((reason) => reason.includes(ABS_SKIPPED_TOKEN));
+  const latestDoneIndex = normalized.findIndex((reason) => reason.includes(ABS_DONE_TOKEN));
+
+  const forcedUntilCompleted =
+    latestSkipIndex !== -1 &&
+    (latestDoneIndex === -1 || latestSkipIndex < latestDoneIndex);
+
+  if (forcedUntilCompleted) {
+    return { includeAbs: true, forcedUntilCompleted: true };
+  }
+
+  const lastHadAbs = normalized.length > 0 && normalized[0].includes(ABS_PLANNED_TOKEN);
+  if (lastHadAbs) {
+    return { includeAbs: false, forcedUntilCompleted: false };
+  }
+
+  const latestAbsIndex = normalized.findIndex((reason) => reason.includes(ABS_PLANNED_TOKEN));
+  const sessionsWithoutAbs = latestAbsIndex === -1 ? normalized.length : latestAbsIndex;
+
+  if (sessionsWithoutAbs >= ABS_MAX_SESSIONS_WITHOUT) {
+    return { includeAbs: true, forcedUntilCompleted: false };
+  }
+
+  const randomInclude = Math.random() < 0.35;
+  return { includeAbs: randomInclude, forcedUntilCompleted: false };
+}
 
 function parseFirstNumber(value?: string | null): number | null {
   if (!value) return null;
@@ -463,6 +552,68 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
         basePlan.workoutCode,
         adjustedDuration
       );
+      const recentSessions = await getWorkoutSessions();
+      const recentReasons = recentSessions
+        .filter((session) => !!session.completed_at)
+        .slice(0, 12)
+        .map((session) => session.reason);
+      const absSchedule = getAbsScheduleState(recentReasons);
+
+      let resolvedTemplate = template;
+      let absBlockIncluded = false;
+      let absExerciseNames: string[] = [];
+
+      if (template && absSchedule.includeAbs) {
+        const allExercises = await getExercises();
+        const coreCandidates = allExercises.filter((exercise) => isAbsExerciseRecord(exercise));
+        const obliqueCandidates = coreCandidates.filter((exercise) =>
+          isObliqueExerciseName(exercise.name)
+        );
+        const abCandidates = coreCandidates.filter(
+          (exercise) => !isObliqueExerciseName(exercise.name)
+        );
+
+        const selectedAbs = chooseRandomDistinct(abCandidates, 2);
+        const selectedOblique = chooseRandomDistinct(
+          obliqueCandidates.filter(
+            (exercise) => !selectedAbs.some((abs) => abs.id === exercise.id)
+          ),
+          1
+        );
+
+        const selectedCore = [...selectedAbs, ...selectedOblique];
+
+        if (selectedCore.length === 3) {
+          const nextSortOrder =
+            template.exercises.length > 0
+              ? Math.max(...template.exercises.map((exercise) => exercise.sort_order)) + 1
+              : 1;
+
+          const absExercises = selectedCore.map((exercise, index) => ({
+            id: 500000 + exercise.id,
+            exercise_name: exercise.name,
+            sort_order: nextSortOrder + index,
+            sets: "3",
+            reps: isObliqueExerciseName(exercise.name) ? "10-12/side" : "12-15",
+            notes: isObliqueExerciseName(exercise.name)
+              ? "Random core add-on (oblique)"
+              : "Random core add-on (abs)",
+            slot_type: "abs_bonus",
+            accessory_slot: "",
+            accessory_equipment: "",
+            tutorial_url: exercise.tutorial_url ?? "",
+            was_rotated: false,
+            rotation_reason: "",
+          }));
+
+          resolvedTemplate = {
+            ...template,
+            exercises: [...template.exercises, ...absExercises],
+          };
+          absBlockIncluded = true;
+          absExerciseNames = absExercises.map((exercise) => exercise.exercise_name);
+        }
+      }
 
       let suggestions: ChallengeSuggestion[] = [];
       let accessoryCues: AccessoryProgressionCue[] = [];
@@ -486,11 +637,11 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
       const gettingGoingAgainActive =
         gettingGoingAgainMode && gettingGoingAgainSessionsRemaining > 0;
 
-      if (template) {
+      if (resolvedTemplate) {
         const primaryTrendValues: number[] = [];
 
         const suggestionCandidates = await Promise.all(
-          template.exercises.map(async (exercise) => {
+          resolvedTemplate.exercises.map(async (exercise) => {
             if (!exercise.exercise_name) return null;
 
             const recent = await getRecentExercisePerformance(
@@ -619,6 +770,16 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
       setChallengeSuggestions(suggestions);
       setAccessoryProgressionCues(accessoryCues);
 
+      if (absBlockIncluded) {
+        adjustedReason += absSchedule.forcedUntilCompleted
+          ? " Core add-on was forced because a previous abs block was skipped."
+          : " Random core add-on included today (2 abs + 1 oblique).";
+      }
+
+      const absPlanToken = absBlockIncluded
+        ? ` ${ABS_PLANNED_TOKEN}${absSchedule.forcedUntilCompleted ? " [abs:forced]" : ""}`
+        : "";
+
       setResult({
         ...basePlan,
         duration: adjustedDuration,
@@ -627,15 +788,18 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
               gettingGoingAgainActive
                 ? ` ${GETTING_GOING_AGAIN_TOKEN.toUpperCase()} Recovery ramp active: use ~75% training loads and hold increases for ${gettingGoingAgainSessionsRemaining} more session(s).`
                 : ""
-            }`
-          : adjustedReason,
+            }${absPlanToken}`
+          : `${adjustedReason}${absPlanToken}`,
         selectedEnergy: energy,
-        template: template ?? undefined,
+        template: resolvedTemplate ?? undefined,
         challengeMode,
         challengeLevel: effectiveChallengeLevel,
         challengeSuggestions: suggestions,
         accessoryProgressionCues: accessoryCues,
         gettingGoingAgainSessionsRemaining,
+        absBlockIncluded,
+        absExerciseNames,
+        absForcedUntilCompleted: absSchedule.forcedUntilCompleted,
       });
 
       setStarted(false);
@@ -1000,6 +1164,31 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
           }}
         >
           <h2 style={{ marginTop: 0 }}>Recommendation</h2>
+
+          {result.absBlockIncluded && (
+            <div
+              style={{
+                display: "inline-block",
+                marginBottom: 10,
+                padding: "4px 10px",
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 700,
+                border: `1px solid ${theme.borderStrong}`,
+                backgroundColor: result.absForcedUntilCompleted
+                  ? theme.warningBg
+                  : theme.accentSoft,
+                color: result.absForcedUntilCompleted
+                  ? theme.warningText
+                  : theme.accent,
+              }}
+            >
+              {result.absForcedUntilCompleted
+                ? "Abs Active (Forced Until Done)"
+                : "Abs Active"}
+            </div>
+          )}
+
           <p>
             <strong>Mode:</strong> {result.mode}
           </p>

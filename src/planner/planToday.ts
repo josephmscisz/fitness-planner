@@ -42,6 +42,9 @@ export type PlanResult = {
   challengeSuggestions?: ChallengeSuggestion[];
   accessoryProgressionCues?: AccessoryProgressionCue[];
   gettingGoingAgainSessionsRemaining?: number;
+  absBlockIncluded?: boolean;
+  absExerciseNames?: string[];
+  absForcedUntilCompleted?: boolean;
 };
 
 function getDuration(minutes: number, energy: EnergyLevel): WorkoutDuration {
