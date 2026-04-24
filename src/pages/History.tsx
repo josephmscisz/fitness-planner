@@ -255,33 +255,53 @@ export default function History({ theme }: { theme: AppTheme }) {
                     <div style={{ fontWeight: 600, marginBottom: 8 }}>Matched WHOOP Workout</div>
 
                     {matchedWhoopWorkout ? (
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(4, minmax(100px, 1fr))",
-                          gap: 12,
-                        }}
-                      >
-                        <div>
-                          <div style={smallMutedTextStyle(theme)}>Sport</div>
-                          <div>{matchedWhoopWorkout.sport_name ?? "—"}</div>
+                      <>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(4, minmax(100px, 1fr))",
+                            gap: 12,
+                          }}
+                        >
+                          <div>
+                            <div style={smallMutedTextStyle(theme)}>Sport</div>
+                            <div>{matchedWhoopWorkout.sport_name ?? "—"}</div>
+                          </div>
+
+                          <div>
+                            <div style={smallMutedTextStyle(theme)}>Strain</div>
+                            <div>{matchedWhoopWorkout.strain ?? "—"}</div>
+                          </div>
+
+                          <div>
+                            <div style={smallMutedTextStyle(theme)}>Avg HR</div>
+                            <div>{matchedWhoopWorkout.average_hr ?? "—"}</div>
+                          </div>
+
+                          <div>
+                            <div style={smallMutedTextStyle(theme)}>Max HR</div>
+                            <div>{matchedWhoopWorkout.max_hr ?? "—"}</div>
+                          </div>
                         </div>
 
-                        <div>
-                          <div style={smallMutedTextStyle(theme)}>Strain</div>
-                          <div>{matchedWhoopWorkout.strain ?? "—"}</div>
+                        <div style={{ marginTop: 12 }}>
+                          <div style={smallMutedTextStyle(theme)}>WHOOP Start</div>
+                          <div>
+                            {matchedWhoopWorkout.start_time
+                              ? new Date(matchedWhoopWorkout.start_time).toLocaleString()
+                              : "—"}
+                          </div>
                         </div>
 
-                        <div>
-                          <div style={smallMutedTextStyle(theme)}>Avg HR</div>
-                          <div>{matchedWhoopWorkout.average_hr ?? "—"}</div>
+                        <div style={{ ...smallMutedTextStyle(theme), marginTop: 10 }}>
+                          Subjective vs WHOOP:{" "}
+                          {selected?.selected_energy && selected?.whoop_alignment_bucket
+                            ? selected.selected_energy === selected.whoop_alignment_bucket
+                              ? "Aligned"
+                              : "Not aligned"
+                            : "—"}
                         </div>
-
-                        <div>
-                          <div style={smallMutedTextStyle(theme)}>Max HR</div>
-                          <div>{matchedWhoopWorkout.max_hr ?? "—"}</div>
-                        </div>
-                      </div>
+                      </>
                     ) : (
                       <div style={smallMutedTextStyle(theme)}>
                         No matched WHOOP workout for this session yet.

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { open } from "@tauri-apps/plugin-shell";
 import {
   planToday,
   type EnergyLevel,
@@ -7,6 +8,7 @@ import {
 } from "../planner/planToday";
 import {
   computeWhoopAlignment30d,
+  getLastWhoopSyncTime,
   getLatestWhoopDailyMetric,
   getMostRecentWorkoutCode,
   getSessionsLast7DaysCount,
@@ -17,6 +19,11 @@ import {
   upsertWhoopDailyMetric,
   upsertWhoopWorkout,
 } from "../lib/db";
+import {
+  getWhoopConnectUrl,
+  getWhoopStatusFromBackend,
+  syncWhoopFromBackend,
+} from "../lib/whoopClient";
 import type { AppTheme } from "../theme";
 import {
   cardStyle,
@@ -28,8 +35,6 @@ import {
   tableHeaderStyle,
 } from "../themeStyles";
 import SessionLogger from "./SessionLogger";
-import { open } from "@tauri-apps/plugin-shell";
-import { getWhoopConnectUrl, syncWhoopFromBackend } from "../lib/whoopClient";
 
 function getRotationBadgeStyle(theme: AppTheme, reason?: string) {
   const text = (reason ?? "").toLowerCase();
@@ -98,9 +103,16 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
 
   const [whoopConnected, setWhoopConnected] = useState(false);
   const [whoopRecovery, setWhoopRecovery] = useState<number | null>(null);
-  const [whoopSleepPerformance, setWhoopSleepPerformance] = useState<number | null>(null);
-  const [whoopAlignmentPercent, setWhoopAlignmentPercent] = useState<number | null>(null);
-  const [whoopAlignmentBucket, setWhoopAlignmentBucket] = useState<"low" | "medium" | "high" | null>(null);
+  const [whoopSleepPerformance, setWhoopSleepPerformance] = useState<
+    number | null
+  >(null);
+  const [whoopAlignmentPercent, setWhoopAlignmentPercent] = useState<
+    number | null
+  >(null);
+  const [whoopAlignmentBucket, setWhoopAlignmentBucket] = useState<
+    "low" | "medium" | "high" | null
+  >(null);
+  const [whoopLastSync, setWhoopLastSync] = useState<string | null>(null);
   const [syncingWhoop, setSyncingWhoop] = useState(false);
   const [whoopSyncMessage, setWhoopSyncMessage] = useState("");
   const [whoopSyncError, setWhoopSyncError] = useState("");
@@ -126,57 +138,39 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
     loadPlannerDefaults();
   }, []);
 
-  async function handlePlan() {
-    setLoading(true);
+  async function loadWhoopStatus() {
+    let backendConnected = false;
 
     try {
-      await initDb();
-
-      const basePlan = planToday({
-        minutes,
-        energy,
-        modePreference,
-        sessionsLast7Days,
-        lastWorkout: lastWorkout || undefined,
-      });
-
-      const template = await getWorkoutTemplateByCodeAndDuration(
-        basePlan.workoutCode,
-        basePlan.duration
-      );
-
-      setResult({
-        ...basePlan,
-        template: template ?? undefined,
-      });
-
-      setStarted(false);
-    } catch (err) {
-      console.error("PLAN LOAD ERROR:", err);
-    } finally {
-      setLoading(false);
+      const backendStatus = await getWhoopStatusFromBackend();
+      backendConnected = backendStatus.connected;
+    } catch {
+      const localConnection = await getWhoopConnection();
+      backendConnected = !!localConnection;
     }
-  }
 
-  async function loadWhoopStatus() {
-    const [connection, latestMetric, alignment] = await Promise.all([
-      getWhoopConnection(),
+    const [latestMetric, alignment, lastSync] = await Promise.all([
       getLatestWhoopDailyMetric(),
       computeWhoopAlignment30d(),
+      getLastWhoopSyncTime(),
     ]);
 
-    setWhoopConnected(!!connection);
+    setWhoopConnected(backendConnected);
     setWhoopRecovery(latestMetric?.recovery_score ?? null);
     setWhoopSleepPerformance(latestMetric?.sleep_performance ?? null);
     setWhoopAlignmentPercent(alignment.percent);
     setWhoopAlignmentBucket(alignment.latestBucket);
+    setWhoopLastSync(lastSync);
   }
 
   async function handleConnectWhoop() {
     try {
+      setWhoopSyncError("");
       await open(getWhoopConnectUrl());
     } catch (err) {
-      console.error("WHOOP CONNECT ERROR:", err);
+      setWhoopSyncError(
+        err instanceof Error ? err.message : String(err)
+      );
     }
   }
 
@@ -232,8 +226,12 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
       await loadWhoopStatus();
 
       setWhoopSyncMessage(
-        `WHOOP sync complete.${payload.latestMetric ? " Latest recovery/sleep loaded." : ""}${
-          payload.workouts?.length ? ` Workouts imported: ${payload.workouts.length}.` : ""
+        `WHOOP sync complete.${
+          payload.latestMetric ? " Recovery/sleep loaded." : ""
+        }${
+          payload.workouts?.length
+            ? ` Workouts imported: ${payload.workouts.length}.`
+            : ""
         }`
       );
     } catch (err) {
@@ -241,6 +239,64 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
       setWhoopSyncError(err instanceof Error ? err.message : String(err));
     } finally {
       setSyncingWhoop(false);
+    }
+  }
+
+  async function handlePlan() {
+    setLoading(true);
+
+    try {
+      await initDb();
+
+      const basePlan = planToday({
+        minutes,
+        energy,
+        modePreference,
+        sessionsLast7Days,
+        lastWorkout: lastWorkout || undefined,
+      });
+
+      let adjustedReason = basePlan.reason;
+      let adjustedDuration = basePlan.duration;
+
+      if (whoopRecovery != null || whoopSleepPerformance != null) {
+        const lowRecovery = whoopRecovery != null && whoopRecovery < 34;
+        const lowSleep =
+          whoopSleepPerformance != null && whoopSleepPerformance < 70;
+        const highRecovery = whoopRecovery != null && whoopRecovery >= 67;
+        const highSleep =
+          whoopSleepPerformance != null && whoopSleepPerformance >= 85;
+
+        if (lowRecovery || lowSleep) {
+          adjustedReason +=
+            " WHOOP suggests reduced readiness today, so this recommendation is intentionally conservative.";
+
+          if (basePlan.duration === "75") adjustedDuration = "60";
+          else if (basePlan.duration === "60") adjustedDuration = "30";
+        } else if (highRecovery && highSleep) {
+          adjustedReason +=
+            " WHOOP suggests strong readiness today, so you are well-positioned to push a bit if desired.";
+        }
+      }
+
+      const template = await getWorkoutTemplateByCodeAndDuration(
+        basePlan.workoutCode,
+        adjustedDuration
+      );
+
+      setResult({
+        ...basePlan,
+        duration: adjustedDuration,
+        reason: adjustedReason,
+        selectedEnergy: energy,
+        template: template ?? undefined,
+      });
+
+      setStarted(false);
+    } catch (err) {
+      console.error("PLAN LOAD ERROR:", err);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -311,7 +367,9 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
           <select
             style={inputStyle(theme)}
             value={modePreference}
-            onChange={(e) => setModePreference(e.target.value as ModePreference)}
+            onChange={(e) =>
+              setModePreference(e.target.value as ModePreference)
+            }
           >
             <option value="auto">Auto</option>
             <option value="chaos">Chaos</option>
@@ -353,8 +411,8 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
           </label>
 
           <div style={smallMutedTextStyle(theme)}>
-            Auto: {autoSessionsLast7Days} session(s) in last 7 days · last workout{" "}
-            {autoLastWorkout || "none"}
+            Auto: {autoSessionsLast7Days} session(s) in last 7 days · last
+            workout {autoLastWorkout || "none"}
           </div>
 
           {overrideHistoryInputs && (
@@ -369,7 +427,9 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
                   min={0}
                   max={14}
                   value={sessionsLast7Days}
-                  onChange={(e) => setSessionsLast7Days(Number(e.target.value))}
+                  onChange={(e) =>
+                    setSessionsLast7Days(Number(e.target.value))
+                  }
                 />
               </label>
 
@@ -382,7 +442,9 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
                   type="text"
                   placeholder="Examples: A, B, C, LOWER1, PUSH, LOWER2, PULL"
                   value={lastWorkout}
-                  onChange={(e) => setLastWorkout(e.target.value.toUpperCase())}
+                  onChange={(e) =>
+                    setLastWorkout(e.target.value.toUpperCase())
+                  }
                 />
               </label>
             </div>
@@ -407,21 +469,26 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
               marginBottom: 8,
             }}
           >
-            <div style={{ fontWeight: 600 }}>WHOOP Status</div>
+            <div>
+              <div style={{ fontWeight: 700 }}>WHOOP Status</div>
+              <div style={smallMutedTextStyle(theme)}>
+                {whoopConnected
+                  ? "WHOOP connected"
+                  : "WHOOP not connected yet"}
+              </div>
+            </div>
 
-            <div style={{ display: "flex", gap: 8 }}>
-              {!whoopConnected && (
-                <button
-                  type="button"
-                  onClick={handleConnectWhoop}
-                  style={{
-                    ...primaryButtonStyle(theme),
-                    padding: "8px 12px",
-                  }}
-                >
-                  Connect WHOOP
-                </button>
-              )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={handleConnectWhoop}
+                style={{
+                  ...primaryButtonStyle(theme),
+                  padding: "8px 12px",
+                }}
+              >
+                Connect WHOOP
+              </button>
 
               <button
                 type="button"
@@ -436,12 +503,6 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
                 {syncingWhoop ? "Syncing..." : "Sync WHOOP"}
               </button>
             </div>
-          </div>
-
-          <div style={smallMutedTextStyle(theme)}>
-            {whoopConnected
-              ? "WHOOP connected"
-              : "WHOOP not connected yet"}
           </div>
 
           <div
@@ -461,7 +522,7 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
               }}
             >
               <div style={smallMutedTextStyle(theme)}>Recovery</div>
-              <div style={{ fontSize: 20, fontWeight: 700 }}>
+              <div style={{ fontSize: 24, fontWeight: 800 }}>
                 {whoopRecovery ?? "—"}
               </div>
             </div>
@@ -475,8 +536,10 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
               }}
             >
               <div style={smallMutedTextStyle(theme)}>Sleep Performance</div>
-              <div style={{ fontSize: 20, fontWeight: 700 }}>
-                {whoopSleepPerformance != null ? `${whoopSleepPerformance}%` : "—"}
+              <div style={{ fontSize: 24, fontWeight: 800 }}>
+                {whoopSleepPerformance != null
+                  ? `${whoopSleepPerformance}%`
+                  : "—"}
               </div>
             </div>
 
@@ -489,39 +552,49 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
               }}
             >
               <div style={smallMutedTextStyle(theme)}>30-Day Alignment</div>
-              <div style={{ fontSize: 20, fontWeight: 700 }}>
-                {whoopAlignmentPercent != null ? `${whoopAlignmentPercent}%` : "—"}
+              <div style={{ fontSize: 24, fontWeight: 800 }}>
+                {whoopAlignmentPercent != null
+                  ? `${whoopAlignmentPercent}%`
+                  : "—"}
+              </div>
+              <div style={smallMutedTextStyle(theme)}>
+                Subjective energy vs WHOOP recovery.
               </div>
             </div>
           </div>
 
           <div style={{ ...smallMutedTextStyle(theme), marginTop: 10 }}>
             WHOOP readiness bucket: {whoopAlignmentBucket ?? "—"}
-
-            {whoopSyncMessage && (
-              <div
-                style={{
-                  ...smallMutedTextStyle(theme),
-                  marginTop: 10,
-                  color: theme.successText,
-                }}
-              >
-                {whoopSyncMessage}
-              </div>
-            )}
-
-            {whoopSyncError && (
-              <div
-                style={{
-                  ...smallMutedTextStyle(theme),
-                  marginTop: 10,
-                  color: theme.dangerText,
-                }}
-              >
-                Sync failed: {whoopSyncError}
-              </div>
-            )}
           </div>
+
+          <div style={{ ...smallMutedTextStyle(theme), marginTop: 6 }}>
+            Last sync:{" "}
+            {whoopLastSync ? new Date(whoopLastSync).toLocaleString() : "—"}
+          </div>
+
+          {whoopSyncMessage && (
+            <div
+              style={{
+                ...smallMutedTextStyle(theme),
+                marginTop: 10,
+                color: theme.successText,
+              }}
+            >
+              {whoopSyncMessage}
+            </div>
+          )}
+
+          {whoopSyncError && (
+            <div
+              style={{
+                ...smallMutedTextStyle(theme),
+                marginTop: 10,
+                color: theme.dangerText,
+              }}
+            >
+              Sync failed: {whoopSyncError}
+            </div>
+          )}
         </div>
 
         <button

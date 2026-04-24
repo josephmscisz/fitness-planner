@@ -1,5 +1,5 @@
 const WHOOP_BACKEND_BASE =
-  import.meta.env.VITE_WHOOP_BACKEND_BASE || "http://localhost:8787";
+  import.meta.env.VITE_WHOOP_BACKEND_BASE || "http://127.0.0.1:8787";
 
 export type WhoopSyncPayload = {
   connected: boolean;

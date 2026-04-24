@@ -1526,21 +1526,42 @@ export async function computeWhoopAlignment30d(): Promise<{
 
 export async function matchWhoopWorkoutToSession(
   sessionStartedAt: string,
-  windowHours: number = 4
+  windowHours: number = 6
 ): Promise<string | null> {
-  const workouts = await getRecentWhoopWorkouts(50);
+  const workouts = await getRecentWhoopWorkouts(100);
 
   const sessionTs = new Date(sessionStartedAt).getTime();
+  const sessionDate = new Date(sessionStartedAt).toISOString().slice(0, 10);
   const maxDiffMs = windowHours * 60 * 60 * 1000;
 
   let bestId: string | null = null;
-  let bestDiff = Number.POSITIVE_INFINITY;
+  let bestScore = Number.NEGATIVE_INFINITY;
 
   for (const workout of workouts) {
     const workoutTs = new Date(workout.start_time).getTime();
-    const diff = Math.abs(sessionTs - workoutTs);
-    if (diff <= maxDiffMs && diff < bestDiff) {
-      bestDiff = diff;
+    const diffMs = Math.abs(sessionTs - workoutTs);
+
+    if (diffMs > maxDiffMs) continue;
+
+    const workoutDate = new Date(workout.start_time).toISOString().slice(0, 10);
+
+    let score = 0;
+
+    // closer in time is better
+    score += Math.max(0, 100 - diffMs / (1000 * 60 * 10)); // lose 1 point per 10 min
+
+    // same calendar day bonus
+    if (workoutDate === sessionDate) {
+      score += 25;
+    }
+
+    // slight preference for actual workout-like records
+    if (workout.sport_name && String(workout.sport_name).trim().length > 0) {
+      score += 10;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
       bestId = workout.whoop_workout_id;
     }
   }
@@ -1562,4 +1583,31 @@ export async function getWhoopWorkoutById(
   );
 
   return rows[0] ?? null;
+}
+
+export async function getLastWhoopSyncTime(): Promise<string | null> {
+  const db = await getDb();
+
+  const metricRows = await db.select<{ synced_at: string }[]>(
+    `SELECT synced_at
+     FROM whoop_daily_metrics
+     ORDER BY synced_at DESC
+     LIMIT 1`
+  );
+
+  const workoutRows = await db.select<{ synced_at: string }[]>(
+    `SELECT synced_at
+     FROM whoop_workouts
+     ORDER BY synced_at DESC
+     LIMIT 1`
+  );
+
+  const times = [
+    metricRows[0]?.synced_at,
+    workoutRows[0]?.synced_at,
+  ].filter(Boolean) as string[];
+
+  if (times.length === 0) return null;
+
+  return times.sort().reverse()[0];
 }

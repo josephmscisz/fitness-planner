@@ -19,6 +19,6 @@ app.get("/health", (_req, res) => {
 
 app.use("/whoop", whoopRouter);
 
-app.listen(PORT, () => {
-  console.log(`WHOOP backend listening on http://localhost:${PORT}`);
+app.listen(PORT, "127.0.0.1", () => {
+  console.log(`WHOOP backend listening on http://127.0.0.1:${PORT}`);
 });

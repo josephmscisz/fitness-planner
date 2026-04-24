@@ -17,6 +17,15 @@
     "dialog:default",
     "fs:default",
     "sql:allow-select",
-    "shell:allow-open"
+    "shell:allow-open",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/whoop-backend",
+          "sidecar": true
+        }
+      ]
+    }
   ]
 }

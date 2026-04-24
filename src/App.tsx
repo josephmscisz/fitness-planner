@@ -1,3 +1,4 @@
+import { ensureWhoopBackendRunning } from "./lib/backendSidecar";
 import { useEffect, useMemo, useState } from "react";
 import ExerciseLibrary from "./pages/ExerciseLibrary";
 import PlanToday from "./pages/PlanToday";
@@ -19,10 +20,20 @@ function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
 
   useEffect(() => {
-    const saved = localStorage.getItem("themeMode");
-    if (saved === "light" || saved === "dark") {
-      setThemeMode(saved);
-    }
+    ensureWhoopBackendRunning()
+      .then(() => {
+        console.log("WHOOP backend startup requested successfully.");
+      })
+      .catch((err) => {
+        console.error("Failed to start WHOOP backend sidecar:", err);
+        alert(`Failed to start WHOOP backend: ${String(err)}`);
+      });
+  }, []);
+
+  useEffect(() => {
+    ensureWhoopBackendRunning().catch((err) => {
+      console.error("Failed to start WHOOP backend sidecar:", err);
+    });
   }, []);
 
   useEffect(() => {
