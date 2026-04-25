@@ -3,7 +3,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-require("dotenv/config");
+// Load .env only in local development; Railway injects env vars directly
+if (!process.env.RAILWAY) {
+    require("dotenv").config();
+}
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const whoop_1 = __importDefault(require("./routes/whoop"));
@@ -22,4 +25,13 @@ app.use("/whoop", whoop_1.default);
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`WHOOP backend listening on port ${PORT}`);
     console.log(`NODE_ENV=${process.env.NODE_ENV || "undefined"}`);
+});
+// Handle uncaught errors
+process.on("uncaughtException", (err) => {
+    console.error("UNCAUGHT EXCEPTION:", err);
+    process.exit(1);
+});
+process.on("unhandledRejection", (reason, promise) => {
+    console.error("UNHANDLED REJECTION:", reason);
+    process.exit(1);
 });
