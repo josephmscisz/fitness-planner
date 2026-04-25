@@ -256,6 +256,10 @@ function getTokenInfo() {
 router.get("/connect", (_req, res) => {
   const { clientId, clientSecret, redirectUri } = getConfig();
 
+  console.log("WHOOP_CLIENT_ID check:", !!clientId, `len=${clientId?.length ?? 0}`);
+  console.log("WHOOP_CLIENT_SECRET check:", !!clientSecret, `len=${clientSecret?.length ?? 0}`);
+  console.log("WHOOP_REDIRECT_URI check:", !!redirectUri, `value=${redirectUri}`);
+
   if (!clientId || !clientSecret || !redirectUri) {
     res
       .status(500)
