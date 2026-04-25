@@ -310,6 +310,9 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
     "low" | "medium" | "high" | null
   >(null);
   const [whoopLastSync, setWhoopLastSync] = useState<string | null>(null);
+  const [whoopTokenExpiresAt, setWhoopTokenExpiresAt] = useState<string | null>(
+    null
+  );
   const [syncingWhoop, setSyncingWhoop] = useState(false);
   const [whoopSyncMessage, setWhoopSyncMessage] = useState("");
   const [whoopSyncError, setWhoopSyncError] = useState("");
@@ -397,13 +400,16 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
 
   async function loadWhoopStatus() {
     let backendConnected = false;
+    let backendExpiresAt: string | null = null;
 
     try {
       const backendStatus = await getWhoopStatusFromBackend();
       backendConnected = backendStatus.connected;
+      backendExpiresAt = backendStatus.expiresAt ?? null;
     } catch {
       const localConnection = await getWhoopConnection();
       backendConnected = !!localConnection;
+      backendExpiresAt = localConnection?.expires_at ?? null;
     }
 
     const [latestMetric, alignment, lastSync] = await Promise.all([
@@ -418,6 +424,7 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
     setWhoopAlignmentPercent(alignment.percent);
     setWhoopAlignmentBucket(alignment.latestBucket);
     setWhoopLastSync(lastSync);
+    setWhoopTokenExpiresAt(backendExpiresAt);
   }
 
   async function handleConnectWhoop() {
@@ -1114,6 +1121,13 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
           <div style={{ ...smallMutedTextStyle(theme), marginTop: 6 }}>
             Last sync:{" "}
             {whoopLastSync ? new Date(whoopLastSync).toLocaleString() : "—"}
+          </div>
+
+          <div style={{ ...smallMutedTextStyle(theme), marginTop: 6 }}>
+            Token expires:{" "}
+            {whoopTokenExpiresAt
+              ? new Date(whoopTokenExpiresAt).toLocaleString()
+              : "—"}
           </div>
 
           {whoopSyncMessage && (

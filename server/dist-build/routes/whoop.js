@@ -5,11 +5,50 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const crypto_1 = __importDefault(require("crypto"));
+const promises_1 = require("node:fs/promises");
+const node_path_1 = __importDefault(require("node:path"));
 const router = (0, express_1.Router)();
-const WHOOP_CLIENT_ID = process.env.WHOOP_CLIENT_ID || "";
-const WHOOP_CLIENT_SECRET = process.env.WHOOP_CLIENT_SECRET || "";
-const WHOOP_REDIRECT_URI = process.env.WHOOP_REDIRECT_URI || "http://localhost:8787/whoop/callback";
+// Get config at runtime (for Railway env var injection after container start)
+function getConfig() {
+    const clientId = process.env.WHOOP_CLIENT_ID || "";
+    const clientSecret = process.env.WHOOP_CLIENT_SECRET || "";
+    const redirectUri = process.env.WHOOP_REDIRECT_URI || "http://localhost:8787/whoop/callback";
+    const tokenStorePath = node_path_1.default.resolve(process.cwd(), process.env.TOKEN_STORE_PATH || ".whoop-token-store.json");
+    return { clientId, clientSecret, redirectUri, tokenStorePath };
+}
 const tokenStore = {};
+let tokenStoreLoaded = false;
+async function loadTokenStoreFromDisk() {
+    if (tokenStoreLoaded)
+        return;
+    try {
+        const { tokenStorePath } = getConfig();
+        const text = await (0, promises_1.readFile)(tokenStorePath, "utf-8");
+        const parsed = JSON.parse(text);
+        tokenStore.accessToken = parsed.accessToken;
+        tokenStore.refreshToken = parsed.refreshToken;
+        tokenStore.expiresAt = parsed.expiresAt;
+        tokenStore.scope = parsed.scope;
+        tokenStore.providerUserId = parsed.providerUserId;
+    }
+    catch {
+        // First run or missing/corrupt token file: continue with empty in-memory store.
+    }
+    finally {
+        tokenStoreLoaded = true;
+    }
+}
+async function saveTokenStoreToDisk() {
+    const { tokenStorePath } = getConfig();
+    const toSave = {
+        accessToken: tokenStore.accessToken,
+        refreshToken: tokenStore.refreshToken,
+        expiresAt: tokenStore.expiresAt,
+        scope: tokenStore.scope,
+        providerUserId: tokenStore.providerUserId,
+    };
+    await (0, promises_1.writeFile)(tokenStorePath, JSON.stringify(toSave, null, 2), "utf-8");
+}
 // For a single-user local dev flow, in-memory state is fine for now.
 let pendingOAuthState = "";
 function generateState() {
@@ -17,23 +56,25 @@ function generateState() {
     return crypto_1.default.randomBytes(16).toString("hex");
 }
 function getAuthUrl() {
+    const { clientId, redirectUri } = getConfig();
     pendingOAuthState = generateState();
     const params = new URLSearchParams({
         response_type: "code",
-        client_id: WHOOP_CLIENT_ID,
-        redirect_uri: WHOOP_REDIRECT_URI,
+        client_id: clientId,
+        redirect_uri: redirectUri,
         scope: "read:recovery read:sleep read:workout offline",
         state: pendingOAuthState,
     });
     return `https://api.prod.whoop.com/oauth/oauth2/auth?${params.toString()}`;
 }
 async function exchangeCodeForToken(code) {
+    const { clientId, clientSecret, redirectUri } = getConfig();
     const body = new URLSearchParams({
         grant_type: "authorization_code",
         code,
-        client_id: WHOOP_CLIENT_ID,
-        client_secret: WHOOP_CLIENT_SECRET,
-        redirect_uri: WHOOP_REDIRECT_URI,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
     });
     const response = await fetch("https://api.prod.whoop.com/oauth/oauth2/token", {
         method: "POST",
@@ -48,15 +89,48 @@ async function exchangeCodeForToken(code) {
     }
     return response.json();
 }
+function applyTokenResponseToStore(json) {
+    tokenStore.accessToken = json.access_token;
+    tokenStore.refreshToken = json.refresh_token ?? tokenStore.refreshToken;
+    tokenStore.scope = json.scope ?? tokenStore.scope;
+    tokenStore.providerUserId = json.user?.id ?? tokenStore.providerUserId;
+    if (json.expires_in != null) {
+        const expiresAt = new Date(Date.now() + Number(json.expires_in) * 1000);
+        if (!Number.isNaN(expiresAt.getTime())) {
+            tokenStore.expiresAt = expiresAt.toISOString();
+            return;
+        }
+    }
+    // Some providers return absolute expiry instead of expires_in.
+    const absoluteExpiryCandidate = json.expires_at ?? json.expiresAt ?? null;
+    if (absoluteExpiryCandidate != null) {
+        const absolute = new Date(absoluteExpiryCandidate);
+        if (!Number.isNaN(absolute.getTime())) {
+            tokenStore.expiresAt = absolute.toISOString();
+            return;
+        }
+        const asNumber = Number(absoluteExpiryCandidate);
+        if (Number.isFinite(asNumber) && asNumber > 0) {
+            // Handle seconds or milliseconds epoch values.
+            const asMs = asNumber > 1e12 ? asNumber : asNumber * 1000;
+            const fromEpoch = new Date(asMs);
+            if (!Number.isNaN(fromEpoch.getTime())) {
+                tokenStore.expiresAt = fromEpoch.toISOString();
+            }
+        }
+    }
+}
 async function refreshAccessToken() {
+    await loadTokenStoreFromDisk();
     if (!tokenStore.refreshToken) {
         throw new Error("No WHOOP refresh token available.");
     }
+    const { clientId, clientSecret } = getConfig();
     const body = new URLSearchParams({
         grant_type: "refresh_token",
         refresh_token: tokenStore.refreshToken,
-        client_id: WHOOP_CLIENT_ID,
-        client_secret: WHOOP_CLIENT_SECRET,
+        client_id: clientId,
+        client_secret: clientSecret,
     });
     const response = await fetch("https://api.prod.whoop.com/oauth/oauth2/token", {
         method: "POST",
@@ -70,17 +144,16 @@ async function refreshAccessToken() {
         throw new Error(`WHOOP token refresh failed: ${response.status} ${text}`);
     }
     const json = await response.json();
-    tokenStore.accessToken = json.access_token;
-    tokenStore.refreshToken = json.refresh_token ?? tokenStore.refreshToken;
-    tokenStore.scope = json.scope ?? tokenStore.scope;
-    if (json.expires_in) {
-        const expiresAt = new Date(Date.now() + Number(json.expires_in) * 1000);
-        tokenStore.expiresAt = expiresAt.toISOString();
-    }
+    applyTokenResponseToStore(json);
+    await saveTokenStoreToDisk();
     return tokenStore.accessToken;
 }
 async function getValidAccessToken() {
+    await loadTokenStoreFromDisk();
     if (!tokenStore.accessToken) {
+        if (tokenStore.refreshToken) {
+            return refreshAccessToken();
+        }
         throw new Error("WHOOP is not connected.");
     }
     if (!tokenStore.expiresAt) {
@@ -107,8 +180,25 @@ async function whoopGet(path) {
     }
     return response.json();
 }
+function getTokenInfo() {
+    const expiresAt = tokenStore.expiresAt ?? null;
+    const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : null;
+    const secondsRemaining = expiresAtMs != null && Number.isFinite(expiresAtMs)
+        ? Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000))
+        : null;
+    return {
+        connected: !!tokenStore.accessToken || !!tokenStore.refreshToken,
+        hasAccessToken: !!tokenStore.accessToken,
+        hasRefreshToken: !!tokenStore.refreshToken,
+        expiresAt,
+        secondsRemaining,
+        scope: tokenStore.scope ?? null,
+        providerUserId: tokenStore.providerUserId ?? null,
+    };
+}
 router.get("/connect", (_req, res) => {
-    if (!WHOOP_CLIENT_ID || !WHOOP_CLIENT_SECRET || !WHOOP_REDIRECT_URI) {
+    const { clientId, clientSecret, redirectUri } = getConfig();
+    if (!clientId || !clientSecret || !redirectUri) {
         res
             .status(500)
             .send("WHOOP environment variables are missing. Check server/.env.");
@@ -161,13 +251,8 @@ router.get("/callback", async (req, res) => {
             return;
         }
         const tokenResponse = await exchangeCodeForToken(code);
-        tokenStore.accessToken = tokenResponse.access_token;
-        tokenStore.refreshToken = tokenResponse.refresh_token;
-        tokenStore.scope = tokenResponse.scope;
-        if (tokenResponse.expires_in) {
-            const expiresAt = new Date(Date.now() + Number(tokenResponse.expires_in) * 1000);
-            tokenStore.expiresAt = expiresAt.toISOString();
-        }
+        applyTokenResponseToStore(tokenResponse);
+        await saveTokenStoreToDisk();
         // Clear state after successful auth
         pendingOAuthState = "";
         res.send(`
@@ -192,8 +277,56 @@ router.get("/callback", async (req, res) => {
     }
 });
 router.get("/status", (_req, res) => {
-    res.json({
-        connected: !!tokenStore.accessToken,
+    loadTokenStoreFromDisk()
+        .then(async () => {
+        if (!tokenStore.expiresAt && tokenStore.refreshToken) {
+            try {
+                await refreshAccessToken();
+            }
+            catch {
+                // Keep status response best-effort even if refresh fails.
+            }
+        }
+        const info = getTokenInfo();
+        res.json({
+            connected: info.connected,
+            expiresAt: info.expiresAt,
+            secondsRemaining: info.secondsRemaining,
+        });
+    })
+        .catch(() => {
+        res.json({ connected: false, expiresAt: null, secondsRemaining: null });
+    });
+});
+router.get("/token-info", (_req, res) => {
+    loadTokenStoreFromDisk()
+        .then(async () => {
+        if (!tokenStore.expiresAt && tokenStore.refreshToken) {
+            try {
+                await refreshAccessToken();
+            }
+            catch {
+                // Return best-effort debug information even when refresh fails.
+            }
+        }
+        const { tokenStorePath } = getConfig();
+        res.json({
+            ...getTokenInfo(),
+            tokenStorePath,
+        });
+    })
+        .catch(() => {
+        const { tokenStorePath } = getConfig();
+        res.status(500).json({
+            connected: false,
+            hasAccessToken: false,
+            hasRefreshToken: false,
+            expiresAt: null,
+            secondsRemaining: null,
+            scope: null,
+            providerUserId: null,
+            tokenStorePath,
+        });
     });
 });
 router.post("/refresh", async (_req, res) => {
@@ -209,7 +342,8 @@ router.post("/refresh", async (_req, res) => {
 router.post("/sync", async (_req, res) => {
     try {
         console.log("WHOOP SYNC START");
-        if (!tokenStore.accessToken) {
+        await loadTokenStoreFromDisk();
+        if (!tokenStore.accessToken && !tokenStore.refreshToken) {
             console.log("WHOOP SYNC: no access token");
             res.status(400).json({
                 connected: false,

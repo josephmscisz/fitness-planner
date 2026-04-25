@@ -4,7 +4,8 @@ import cors from "cors";
 import whoopRouter from "./routes/whoop";
 
 const app = express();
-const PORT = Number(process.env.PORT || 8787);
+const parsedPort = Number(process.env.PORT);
+const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 8787;
 
 app.use(cors());
 app.use(express.json());
@@ -21,4 +22,5 @@ app.use("/whoop", whoopRouter);
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`WHOOP backend listening on port ${PORT}`);
+  console.log(`NODE_ENV=${process.env.NODE_ENV || "undefined"}`);
 });

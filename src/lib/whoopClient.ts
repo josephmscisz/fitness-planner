@@ -1,5 +1,9 @@
-const WHOOP_BACKEND_BASE =
+const rawWhoopBackendBase =
   import.meta.env.VITE_WHOOP_BACKEND_BASE || "http://127.0.0.1:8787";
+
+const WHOOP_BACKEND_BASE = /^https?:\/\//i.test(rawWhoopBackendBase)
+  ? rawWhoopBackendBase.replace(/\/$/, "")
+  : `https://${rawWhoopBackendBase.replace(/\/$/, "")}`;
 
 export type WhoopSyncPayload = {
   connected: boolean;
@@ -36,6 +40,8 @@ export function getWhoopConnectUrl() {
 
 export async function getWhoopStatusFromBackend(): Promise<{
   connected: boolean;
+  expiresAt?: string | null;
+  secondsRemaining?: number | null;
 }> {
   const response = await fetch(`${WHOOP_BACKEND_BASE}/whoop/status`);
   if (!response.ok) {
