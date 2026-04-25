@@ -436,4 +436,13 @@ router.post("/sync", async (_req, res) => {
         });
     }
 });
+router.get("/debug-env", (_req, res) => {
+    res.json({
+        WHOOP_CLIENT_ID: process.env.WHOOP_CLIENT_ID ? `***(len=${process.env.WHOOP_CLIENT_ID.length})` : "MISSING",
+        WHOOP_CLIENT_SECRET: process.env.WHOOP_CLIENT_SECRET ? `***(len=${process.env.WHOOP_CLIENT_SECRET.length})` : "MISSING",
+        WHOOP_REDIRECT_URI: process.env.WHOOP_REDIRECT_URI || "MISSING",
+        TOKEN_STORE_PATH: process.env.TOKEN_STORE_PATH || "MISSING",
+        NODE_ENV: process.env.NODE_ENV || "MISSING",
+    });
+});
 exports.default = router;
