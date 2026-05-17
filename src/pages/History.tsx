@@ -33,6 +33,10 @@ export default function History({ theme }: { theme: AppTheme }) {
   const [logs, setLogs] = useState<EditableLog[]>([]);
   const [matchedWhoopWorkout, setMatchedWhoopWorkout] = useState<WhoopWorkout | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    message: string;
+    action: () => Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     loadSessions();
@@ -89,32 +93,48 @@ export default function History({ theme }: { theme: AppTheme }) {
   }
 
   async function removeLog(logId: number) {
-    const confirmed = window.confirm("Delete this exercise log?");
-    if (!confirmed) return;
+    setPendingConfirm({
+      message: "Delete this exercise log?",
+      action: async () => {
+        await deleteExerciseLog(logId);
 
-    await deleteExerciseLog(logId);
+        if (!selected) {
+          return;
+        }
 
-    if (!selected) return;
-
-    const sessionLogs = await getExerciseLogs(selected.id);
-    setLogs(sessionLogs.map((log) => ({ ...log, isDirty: false })));
+        const sessionLogs = await getExerciseLogs(selected.id);
+        setLogs(sessionLogs.map((log) => ({ ...log, isDirty: false })));
+      },
+    });
   }
 
   async function removeSession(sessionId: number) {
-    const confirmed = window.confirm(
-      "Delete this workout session and all of its logs?"
-    );
-    if (!confirmed) return;
+    setPendingConfirm({
+      message: "Delete this workout session and all of its logs?",
+      action: async () => {
+        await deleteWorkoutSession(sessionId);
 
-    await deleteWorkoutSession(sessionId);
+        if (selected?.id === sessionId) {
+          setSelected(null);
+          setLogs([]);
+          setMatchedWhoopWorkout(null);
+        }
 
-    if (selected?.id === sessionId) {
-      setSelected(null);
-      setLogs([]);
-      setMatchedWhoopWorkout(null);
+        await loadSessions();
+      },
+    });
+  }
+
+  async function confirmPendingAction() {
+    if (!pendingConfirm) {
+      return;
     }
 
-    await loadSessions();
+    try {
+      await pendingConfirm.action();
+    } finally {
+      setPendingConfirm(null);
+    }
   }
 
   return (
@@ -422,6 +442,47 @@ export default function History({ theme }: { theme: AppTheme }) {
                   Select a session to view and edit details.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingConfirm && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              ...cardStyle(theme),
+              backgroundColor: theme.surface,
+              width: "100%",
+              maxWidth: 460,
+              padding: 16,
+            }}
+          >
+            <h3 style={{ margin: "0 0 10px" }}>Confirm Action</h3>
+            <p style={{ ...smallMutedTextStyle(theme), marginBottom: 14 }}>
+              {pendingConfirm.message}
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setPendingConfirm(null)}
+                style={secondaryButtonStyle(theme)}
+              >
+                Cancel
+              </button>
+              <button onClick={confirmPendingAction} style={primaryButtonStyle(theme)}>
+                Delete
+              </button>
             </div>
           </div>
         </div>

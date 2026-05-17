@@ -54,13 +54,7 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
-  const [exporting, setExporting] = useState(false);
-  const [exportMessage, setExportMessage] = useState("");
-  const [editingExerciseName, setEditingExerciseName] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<ExerciseRecord | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const editorCardRef = useRef<HTMLDivElement | null>(null);
-  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingDeleteExerciseId, setPendingDeleteExerciseId] = useState<number | null>(null);
 
   async function loadExercises() {
     setLoading(true);
@@ -147,27 +141,13 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
     await loadExercises();
   }
 
-  async function handleDelete(exercise: ExerciseRecord) {
-    setPendingDelete(exercise);
-  }
+  async function handleDelete(id: number) {
+    const confirmed = window.confirm("Delete this exercise?");
+    if (!confirmed) return;
 
-  async function confirmDelete() {
-    if (!pendingDelete) return;
-
-    try {
-      setDeleting(true);
-      await deleteExercise(pendingDelete.id);
-      if (form.id === pendingDelete.id) clearForm();
-      await loadExercises();
-      setPendingDelete(null);
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  function cancelDelete() {
-    if (deleting) return;
-    setPendingDelete(null);
+    await deleteExercise(id);
+    if (form.id === id) clearForm();
+    await loadExercises();
   }
 
   async function handleCsvImport(file: File | null) {
@@ -585,54 +565,6 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
           )}
         </div>
       </div>
-
-      {pendingDelete && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-            padding: 16,
-          }}
-        >
-          <div
-            style={{
-              ...cardStyle(theme),
-              width: "100%",
-              maxWidth: 440,
-              padding: 18,
-              backgroundColor: theme.surface,
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: 10 }}>Confirm Delete</h3>
-            <p style={{ marginTop: 0, marginBottom: 14, color: theme.text }}>
-              Delete exercise "{pendingDelete.name}"? This cannot be undone.
-            </p>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={cancelDelete}
-                disabled={deleting}
-                style={secondaryButtonStyle(theme)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDelete}
-                disabled={deleting}
-                style={primaryButtonStyle(theme)}
-              >
-                {deleting ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,7 +1,14 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppTheme } from "../theme";
 
-const appWindow = getCurrentWindow();
+function withCurrentWindow(action: (appWindow: ReturnType<typeof getCurrentWindow>) => void) {
+  try {
+    const appWindow = getCurrentWindow();
+    action(appWindow);
+  } catch (error) {
+    console.error("Window controls unavailable in this runtime:", error);
+  }
+}
 
 export default function TitleBar({ theme }: { theme: AppTheme }) {
   const buttonBase: React.CSSProperties = {
@@ -52,7 +59,7 @@ export default function TitleBar({ theme }: { theme: AppTheme }) {
         <button
           type="button"
           title="Minimize"
-          onClick={() => appWindow.minimize()}
+          onClick={() => withCurrentWindow((appWindow) => appWindow.minimize())}
           style={buttonBase}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = theme.surfaceElevated;
@@ -69,7 +76,7 @@ export default function TitleBar({ theme }: { theme: AppTheme }) {
         <button
           type="button"
           title="Maximize"
-          onClick={() => appWindow.toggleMaximize()}
+          onClick={() => withCurrentWindow((appWindow) => appWindow.toggleMaximize())}
           style={buttonBase}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = theme.surfaceElevated;
@@ -86,7 +93,7 @@ export default function TitleBar({ theme }: { theme: AppTheme }) {
         <button
           type="button"
           title="Close"
-          onClick={() => appWindow.close()}
+          onClick={() => withCurrentWindow((appWindow) => appWindow.close())}
           style={{ ...buttonBase, color: theme.dangerText }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = theme.dangerBg;

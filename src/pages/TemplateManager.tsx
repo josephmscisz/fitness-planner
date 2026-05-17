@@ -248,13 +248,17 @@ export default function TemplateManager({ theme }: { theme: AppTheme }) {
                     <input
                       style={inputStyle(theme)}
                       value={templateTitle}
-                      onChange={(e) => setTemplateTitle(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setTemplateTitle(e.target.value)
+                      }
                       placeholder="Template title"
                     />
                     <input
                       style={inputStyle(theme)}
                       value={templateFocus}
-                      onChange={(e) => setTemplateFocus(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setTemplateFocus(e.target.value)
+                      }
                       placeholder="Focus"
                     />
                   </div>
@@ -340,7 +344,9 @@ export default function TemplateManager({ theme }: { theme: AppTheme }) {
                       <input
                         style={inputStyle(theme)}
                         value={newReps}
-                        onChange={(e) => setNewReps(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          setNewReps(e.target.value)
+                        }
                         placeholder="Reps"
                       />
                     </div>
