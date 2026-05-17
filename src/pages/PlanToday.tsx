@@ -313,6 +313,10 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
   const [whoopTokenExpiresAt, setWhoopTokenExpiresAt] = useState<string | null>(
     null
   );
+  const [whoopTokenExpiryKnown, setWhoopTokenExpiryKnown] = useState(false);
+  const [whoopTokenSecondsRemaining, setWhoopTokenSecondsRemaining] = useState<
+    number | null
+  >(null);
   const [syncingWhoop, setSyncingWhoop] = useState(false);
   const [whoopSyncMessage, setWhoopSyncMessage] = useState("");
   const [whoopSyncError, setWhoopSyncError] = useState("");
@@ -401,15 +405,22 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
   async function loadWhoopStatus() {
     let backendConnected = false;
     let backendExpiresAt: string | null = null;
+    let backendSecondsRemaining: number | null = null;
+    let backendExpiresAtKnown = false;
 
     try {
       const backendStatus = await getWhoopStatusFromBackend();
       backendConnected = backendStatus.connected;
       backendExpiresAt = backendStatus.expiresAt ?? null;
+      backendSecondsRemaining = backendStatus.secondsRemaining ?? null;
+      backendExpiresAtKnown =
+        backendStatus.expiresAtKnown ?? backendStatus.expiresAt != null;
     } catch {
       const localConnection = await getWhoopConnection();
       backendConnected = !!localConnection;
       backendExpiresAt = localConnection?.expires_at ?? null;
+      backendSecondsRemaining = null;
+      backendExpiresAtKnown = localConnection?.expires_at != null;
     }
 
     const [latestMetric, alignment, lastSync] = await Promise.all([
@@ -425,6 +436,8 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
     setWhoopAlignmentBucket(alignment.latestBucket);
     setWhoopLastSync(lastSync);
     setWhoopTokenExpiresAt(backendExpiresAt);
+    setWhoopTokenSecondsRemaining(backendSecondsRemaining);
+    setWhoopTokenExpiryKnown(backendExpiresAtKnown);
   }
 
   async function handleConnectWhoop() {
@@ -1125,10 +1138,22 @@ export default function PlanToday({ theme }: { theme: AppTheme }) {
 
           <div style={{ ...smallMutedTextStyle(theme), marginTop: 6 }}>
             Token expires:{" "}
-            {whoopTokenExpiresAt
-              ? new Date(whoopTokenExpiresAt).toLocaleString()
-              : "—"}
+            {whoopTokenExpiresAt ? (
+              new Date(whoopTokenExpiresAt).toLocaleString()
+            ) : whoopConnected ? (
+              whoopTokenExpiryKnown
+                ? "Unavailable"
+                : "Unknown (WHOOP did not return an expiry timestamp yet)"
+            ) : (
+              "—"
+            )}
           </div>
+
+          {whoopConnected && whoopTokenSecondsRemaining != null && (
+            <div style={{ ...smallMutedTextStyle(theme), marginTop: 6 }}>
+              Token seconds remaining: {whoopTokenSecondsRemaining}
+            </div>
+          )}
 
           {whoopSyncMessage && (
             <div

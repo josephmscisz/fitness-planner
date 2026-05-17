@@ -59,6 +59,12 @@ Set in your app environment:
 
 - `VITE_WHOOP_BACKEND_BASE=https://<your-railway-domain>`
 
+For packaged app sharing with Railway backend:
+
+- Do not set `VITE_WHOOP_CLIENT_SECRET` in frontend `.env`.
+- Keep `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` only in Railway service variables.
+- The app will skip local sidecar startup when `VITE_WHOOP_BACKEND_BASE` points to a non-localhost URL.
+
 Then rebuild/package the desktop app so testers use Railway instead of localhost.
 
 ### 6. Validate after deploy
@@ -78,3 +84,27 @@ Open these URLs:
 3. Click **Sync WHOOP**.
 
 After this, refresh tokens should handle future syncs without repeated consent unless WHOOP revokes access.
+
+## Dual-Arch Windows Packaging (x64 + ARM64)
+
+This project can build both Windows architectures for Surface compatibility.
+
+From the repo root:
+
+1. `npm run tauri:build:windows:dual`
+
+This command:
+
+- Installs Rust targets: `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`
+- Builds x64 installer
+- Builds ARM64 installer
+
+Output folders:
+
+- `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis`
+- `src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis`
+
+Notes:
+
+- Dual-arch release builds use `src-tauri/tauri.release-remote.conf.json`, which excludes local sidecar binaries from installers.
+- This is intended for Railway-backed deployments (`VITE_WHOOP_BACKEND_BASE` set to your remote backend).

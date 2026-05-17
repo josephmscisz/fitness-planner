@@ -8,6 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:build:windows:x64": "powershell -ExecutionPolicy Bypass -File scripts/run-tauri-build.ps1 -Target x86_64-pc-windows-msvc",
+    "tauri:build:windows:arm64": "powershell -ExecutionPolicy Bypass -File scripts/run-tauri-build.ps1 -Target aarch64-pc-windows-msvc",
+    "tauri:build:windows:dual": "powershell -ExecutionPolicy Bypass -File scripts/build-windows-dual-arch.ps1",
     "scrape:mmh": "node scripts/scrape-modernmeathead.mjs"
   },
   "dependencies": {

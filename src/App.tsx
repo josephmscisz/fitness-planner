@@ -19,18 +19,22 @@ function App() {
   const [page, setPage] = useState<Page>("planner");
   const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
 
-  useEffect(() => {
-    ensureWhoopBackendRunning()
-      .then(() => {
-        console.log("WHOOP backend startup requested successfully.");
-      })
-      .catch((err) => {
-        console.error("Failed to start WHOOP backend sidecar:", err);
-        alert(`Failed to start WHOOP backend: ${String(err)}`);
-      });
-  }, []);
+  const configuredWhoopBackend =
+    (import.meta.env.VITE_WHOOP_BACKEND_BASE as string | undefined)?.trim() ||
+    "";
+
+  const shouldStartLocalWhoopSidecar =
+    configuredWhoopBackend.length === 0 ||
+    /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(
+      configuredWhoopBackend
+    );
 
   useEffect(() => {
+    if (!shouldStartLocalWhoopSidecar) {
+      console.log("Using remote WHOOP backend; skipping local sidecar startup.");
+      return;
+    }
+
     ensureWhoopBackendRunning().catch((err) => {
       console.error("Failed to start WHOOP backend sidecar:", err);
     });

@@ -42,6 +42,7 @@ export async function getWhoopStatusFromBackend(): Promise<{
   connected: boolean;
   expiresAt?: string | null;
   secondsRemaining?: number | null;
+  expiresAtKnown?: boolean;
 }> {
   const response = await fetch(`${WHOOP_BACKEND_BASE}/whoop/status`);
   if (!response.ok) {

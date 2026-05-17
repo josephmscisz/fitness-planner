@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createExercise,
   deleteExercise,
@@ -7,6 +7,7 @@ import {
   updateExercise,
   type ExerciseRecord,
 } from "../lib/db";
+import { exportExercisesCsv } from "../lib/exportExercisesCsv";
 import { importExercisesCsvText } from "../lib/importExercisesCsv";
 import type { AppTheme } from "../theme";
 import {
@@ -53,6 +54,13 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState("");
+  const [editingExerciseName, setEditingExerciseName] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ExerciseRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const editorCardRef = useRef<HTMLDivElement | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   async function loadExercises() {
     setLoading(true);
@@ -84,10 +92,20 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
       tutorialUrl: ex.tutorial_url ?? "",
       accessorySlot: ex.accessory_slot ?? "",
     });
+
+    setEditingExerciseName(ex.name);
+
+    // In packaged builds, bring the edit panel into view so the click result is obvious.
+    requestAnimationFrame(() => {
+      editorCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    });
   }
 
   function clearForm() {
     setForm(emptyForm);
+    setEditingExerciseName(null);
   }
 
   async function handleSave() {
@@ -129,13 +147,27 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
     await loadExercises();
   }
 
-  async function handleDelete(id: number) {
-    const confirmed = window.confirm("Delete this exercise?");
-    if (!confirmed) return;
+  async function handleDelete(exercise: ExerciseRecord) {
+    setPendingDelete(exercise);
+  }
 
-    await deleteExercise(id);
-    if (form.id === id) clearForm();
-    await loadExercises();
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+
+    try {
+      setDeleting(true);
+      await deleteExercise(pendingDelete.id);
+      if (form.id === pendingDelete.id) clearForm();
+      await loadExercises();
+      setPendingDelete(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function cancelDelete() {
+    if (deleting) return;
+    setPendingDelete(null);
   }
 
   async function handleCsvImport(file: File | null) {
@@ -164,6 +196,81 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
     }
   }
 
+  async function handleCsvExport() {
+    if (exercises.length === 0) {
+      setExportMessage("No exercises available to export.");
+      return;
+    }
+
+    try {
+      setExporting(true);
+      setExportMessage("");
+
+      const result = await exportExercisesCsv(exercises);
+
+      if (result.status === "canceled") {
+        setExportMessage("CSV export canceled.");
+        return;
+      }
+
+      if (result.status === "saved") {
+        setExportMessage(`CSV exported (${result.rows} rows) to: ${result.path}`);
+        return;
+      }
+
+      setExportMessage(
+        `CSV download started (${result.rows} rows): ${result.fileName}`
+      );
+    } catch (err) {
+      setExportMessage(
+        `CSV export failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleCustomCsvExport() {
+    if (exercises.length === 0) {
+      setExportMessage("No exercises available to export.");
+      return;
+    }
+
+    try {
+      setExporting(true);
+      setExportMessage("");
+
+      const result = await exportExercisesCsv(exercises, { customOnly: true });
+
+      if (result.status === "canceled") {
+        setExportMessage("Custom CSV export canceled.");
+        return;
+      }
+
+      if (result.rows === 0) {
+        setExportMessage("No custom exercises found to export.");
+        return;
+      }
+
+      if (result.status === "saved") {
+        setExportMessage(
+          `Custom CSV exported (${result.rows} rows) to: ${result.path}`
+        );
+        return;
+      }
+
+      setExportMessage(
+        `Custom CSV download started (${result.rows} rows): ${result.fileName}`
+      );
+    } catch (err) {
+      setExportMessage(
+        `Custom CSV export failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div style={pageStyle(theme)}>
       <h1 style={{ marginBottom: 8 }}>Exercise Manager</h1>
@@ -180,9 +287,10 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
           backgroundColor: theme.surface,
         }}
       >
-        <h3 style={{ marginTop: 0, marginBottom: 8 }}>Import Exercises CSV</h3>
+        <h3 style={{ marginTop: 0, marginBottom: 8 }}>Import / Export Exercises CSV</h3>
         <p style={smallMutedTextStyle(theme)}>
-          Expected headers: module_name, exercise_name, exercise_url
+          Import expected headers: module_name, exercise_name, exercise_url.
+          Export includes those fields plus your full exercise metadata.
         </p>
 
         <div
@@ -200,6 +308,24 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
             style={{ color: theme.text }}
           />
 
+          <button
+            type="button"
+            onClick={handleCsvExport}
+            disabled={exporting || loading}
+            style={secondaryButtonStyle(theme)}
+          >
+            {exporting ? "Exporting..." : "Export CSV"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCustomCsvExport}
+            disabled={exporting || loading}
+            style={secondaryButtonStyle(theme)}
+          >
+            {exporting ? "Exporting..." : "Export Custom CSV"}
+          </button>
+
           {importing && (
             <span style={smallMutedTextStyle(theme)}>Importing...</span>
           )}
@@ -208,6 +334,12 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
         {importMessage && (
           <div style={{ marginTop: 10, color: theme.textMuted, fontSize: 14 }}>
             {importMessage}
+          </div>
+        )}
+
+        {exportMessage && (
+          <div style={{ marginTop: 10, color: theme.textMuted, fontSize: 14 }}>
+            {exportMessage}
           </div>
         )}
       </div>
@@ -222,6 +354,7 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
         }}
       >
         <div
+          ref={editorCardRef}
           style={{
             ...cardStyle(theme),
             padding: 16,
@@ -232,8 +365,15 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
             {form.id ? "Edit Exercise" : "Add Exercise"}
           </h3>
 
+          {editingExerciseName && (
+            <div style={{ ...smallMutedTextStyle(theme), marginBottom: 10 }}>
+              Editing: {editingExerciseName}
+            </div>
+          )}
+
           <div style={{ display: "grid", gap: 12 }}>
             <input
+              ref={nameInputRef}
               style={inputStyle(theme)}
               placeholder="Name"
               value={form.name}
@@ -331,10 +471,10 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
           </div>
 
           <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-            <button onClick={handleSave} style={primaryButtonStyle(theme)}>
+            <button type="button" onClick={handleSave} style={primaryButtonStyle(theme)}>
               {form.id ? "Update" : "Create"}
             </button>
-            <button onClick={clearForm} style={secondaryButtonStyle(theme)}>
+            <button type="button" onClick={clearForm} style={secondaryButtonStyle(theme)}>
               Clear
             </button>
           </div>
@@ -414,6 +554,7 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
                       <td style={tableCellStyle(theme)}>
                         <div style={{ display: "flex", gap: 8 }}>
                           <button
+                            type="button"
                             onClick={() => editExercise(ex)}
                             style={{
                               ...secondaryButtonStyle(theme),
@@ -424,7 +565,8 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
                             Edit
                           </button>
                           <button
-                            onClick={() => handleDelete(ex.id)}
+                            type="button"
+                            onClick={() => handleDelete(ex)}
                             style={{
                               ...secondaryButtonStyle(theme),
                               padding: "8px 10px",
@@ -443,6 +585,54 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
           )}
         </div>
       </div>
+
+      {pendingDelete && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              ...cardStyle(theme),
+              width: "100%",
+              maxWidth: 440,
+              padding: 18,
+              backgroundColor: theme.surface,
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 10 }}>Confirm Delete</h3>
+            <p style={{ marginTop: 0, marginBottom: 14, color: theme.text }}>
+              Delete exercise "{pendingDelete.name}"? This cannot be undone.
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={cancelDelete}
+                disabled={deleting}
+                style={secondaryButtonStyle(theme)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleting}
+                style={primaryButtonStyle(theme)}
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

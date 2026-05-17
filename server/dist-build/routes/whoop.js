@@ -198,9 +198,6 @@ function getTokenInfo() {
 }
 router.get("/connect", (_req, res) => {
     const { clientId, clientSecret, redirectUri } = getConfig();
-    console.log("WHOOP_CLIENT_ID check:", !!clientId, `len=${clientId?.length ?? 0}`);
-    console.log("WHOOP_CLIENT_SECRET check:", !!clientSecret, `len=${clientSecret?.length ?? 0}`);
-    console.log("WHOOP_REDIRECT_URI check:", !!redirectUri, `value=${redirectUri}`);
     if (!clientId || !clientSecret || !redirectUri) {
         res
             .status(500)
@@ -295,10 +292,16 @@ router.get("/status", (_req, res) => {
             connected: info.connected,
             expiresAt: info.expiresAt,
             secondsRemaining: info.secondsRemaining,
+            expiresAtKnown: info.expiresAt != null,
         });
     })
         .catch(() => {
-        res.json({ connected: false, expiresAt: null, secondsRemaining: null });
+        res.json({
+            connected: false,
+            expiresAt: null,
+            secondsRemaining: null,
+            expiresAtKnown: false,
+        });
     });
 });
 router.get("/token-info", (_req, res) => {
@@ -435,14 +438,5 @@ router.post("/sync", async (_req, res) => {
             error: err instanceof Error ? err.message : String(err),
         });
     }
-});
-router.get("/debug-env", (_req, res) => {
-    res.json({
-        WHOOP_CLIENT_ID: process.env.WHOOP_CLIENT_ID ? `***(len=${process.env.WHOOP_CLIENT_ID.length})` : "MISSING",
-        WHOOP_CLIENT_SECRET: process.env.WHOOP_CLIENT_SECRET ? `***(len=${process.env.WHOOP_CLIENT_SECRET.length})` : "MISSING",
-        WHOOP_REDIRECT_URI: process.env.WHOOP_REDIRECT_URI || "MISSING",
-        TOKEN_STORE_PATH: process.env.TOKEN_STORE_PATH || "MISSING",
-        NODE_ENV: process.env.NODE_ENV || "MISSING",
-    });
 });
 exports.default = router;
