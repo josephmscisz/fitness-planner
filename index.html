@@ -9,6 +9,34 @@
 
   <body>
     <div id="root"></div>
+    <div id="fatal-error" style="display:none;color:red;font-size:1.2em;padding:2em;text-align:center;background:#fff;z-index:9999;position:fixed;top:0;left:0;width:100vw;min-height:100vh;"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Show a visible error if the main JS bundle fails to load or throws
+      window.addEventListener('error', function(e) {
+        const el = document.getElementById('fatal-error');
+        if (el) {
+          el.style.display = 'block';
+          el.textContent = 'Startup Error: ' + (e.error ? (e.error.stack || e.error.message || e.error) : (e.message || e));
+        }
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        const el = document.getElementById('fatal-error');
+        if (el) {
+          el.style.display = 'block';
+          el.textContent = 'Unhandled Promise Rejection: ' + (e.reason && (e.reason.stack || e.reason.message || e.reason));
+        }
+      });
+      // Show a message if the main bundle fails to load
+      document.querySelectorAll('script[type="module"]').forEach(function(script) {
+        script.addEventListener('error', function() {
+          const el = document.getElementById('fatal-error');
+          if (el) {
+            el.style.display = 'block';
+            el.textContent = 'Failed to load main bundle: ' + script.src;
+          }
+        });
+      });
+    </script>
   </body>
 </html>

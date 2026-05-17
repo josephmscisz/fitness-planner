@@ -15,6 +15,7 @@
     "sql:allow-load",
     "sql:allow-execute",
     "dialog:default",
+    "dialog:allow-confirm",
     "fs:default",
     "sql:allow-select",
     "shell:allow-open",

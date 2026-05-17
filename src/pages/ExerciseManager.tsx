@@ -53,6 +53,7 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
+  const [pendingDeleteExerciseId, setPendingDeleteExerciseId] = useState<number | null>(null);
 
   async function loadExercises() {
     setLoading(true);
@@ -130,12 +131,18 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
   }
 
   async function handleDelete(id: number) {
-    const confirmed = window.confirm("Delete this exercise?");
-    if (!confirmed) return;
+    setPendingDeleteExerciseId(id);
+  }
 
-    await deleteExercise(id);
-    if (form.id === id) clearForm();
+  async function confirmDeleteExercise() {
+    if (pendingDeleteExerciseId == null) {
+      return;
+    }
+
+    await deleteExercise(pendingDeleteExerciseId);
+    if (form.id === pendingDeleteExerciseId) clearForm();
     await loadExercises();
+    setPendingDeleteExerciseId(null);
   }
 
   async function handleCsvImport(file: File | null) {
@@ -443,6 +450,47 @@ export default function ExerciseManager({ theme }: { theme: AppTheme }) {
           )}
         </div>
       </div>
+
+      {pendingDeleteExerciseId != null && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              ...cardStyle(theme),
+              backgroundColor: theme.surface,
+              width: "100%",
+              maxWidth: 420,
+              padding: 16,
+            }}
+          >
+            <h3 style={{ margin: "0 0 10px" }}>Delete Exercise</h3>
+            <p style={{ ...smallMutedTextStyle(theme), marginBottom: 14 }}>
+              Delete this exercise?
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setPendingDeleteExerciseId(null)}
+                style={secondaryButtonStyle(theme)}
+              >
+                Cancel
+              </button>
+              <button onClick={confirmDeleteExercise} style={primaryButtonStyle(theme)}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

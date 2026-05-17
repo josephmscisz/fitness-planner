@@ -17,7 +17,9 @@
         "height": 800,
         "theme": "Dark",
         "scrollBarStyle": "fluentOverlay",
-        "decorations": false,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "transparent": false
       }
     ],
@@ -27,7 +29,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "nsis",
+    "targets": [
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,13 +39,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/whoop-backend"
-    ],
-    "windows": {
-      "nsis": {
-        "displayLanguageSelector": true
-      }
+    "macOS": {
+      "entitlements": null,
+      "exceptionDomain": null,
+      "frameworks": [],
+      "minimumSystemVersion": "10.13",
+      "signingIdentity": null,
+      "providerShortName": null
     }
   }
 }
